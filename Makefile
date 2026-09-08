@@ -24,7 +24,7 @@ BINS  = $(addprefix out/,$(PARTS))
 
 # Sources included with PUT by more than one part. Listed as
 # prerequisites so editing them rebuilds every part.
-SHARED = src/shared.s src/common.s src/tables.s
+SHARED = src/shared.s src/common.s src/tables.s src/rng.s
 
 .PHONY: all package clean
 all: package

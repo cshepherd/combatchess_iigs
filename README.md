@@ -6,7 +6,7 @@ The rules specification lives in `combat_chess_iigs_spec-3.md`; the plan for har
 
 ## Status
 
-Milestone 1 in progress. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. The rules data tables (unit classes, fuel costs, hit probabilities) exist with self-tests; movement, fire and turn logic are next.
+Milestone 1 in progress. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. The rules data tables (unit classes, fuel costs, hit probabilities) and the seedable random generator with shot resolution exist with self-tests; movement, fire and turn logic are next.
 
 Press T on the title screen to run the rules self-tests.
 
@@ -40,6 +40,8 @@ Boot `out/combatchess.po` in KEGS, GSplus, or on real hardware. The volume conta
 | `src/game.s` | Game part: rules engine and board display go here |
 | `src/test.s` | Rules self-tests part (spec section 33) |
 | `src/tables.s` | Rules data: unit class, fuel cost and hit probability tables with their lookups |
+| `src/rng.s` | Seedable xorshift32 generator, 0-99 roll, `resolve_hit` with injectable roll |
+| `tools/rng_ref.py` | Byte-exact Python mirror of `rng.s` for replay tools and test known answers |
 | `src/shared.s` | Equates shared by every part (launcher entries, page $11 globals) |
 | `src/common.s` | Routines shared by every part (toolbox start-up, SHR init, text, keys) |
 | `res/` | `PRODOS` system file |

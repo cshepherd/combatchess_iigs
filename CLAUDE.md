@@ -44,13 +44,14 @@ Every part is a SYS file with `ORG $2000` that does `put shared` at the top (equ
 
 ## Rules engine
 
-Lives in `src/tables.s` and the includes that will follow it (movement, fire, turns), included by GAME and TEST. Conventions:
+Lives in `src/tables.s`, `src/rng.s` and the includes that will follow them (movement, fire, turns), included by GAME and TEST in that order. Conventions:
 
 - Routines are entered in native mode with 8-bit A/X/Y (`MX %11`), DBR $00, D $0000, and say so if they differ.
 - Scratch is the direct-page range `rt0`-`rt3`, `rptr`, `rptr2` ($E0-$E7) from shared.s, live only within one routine.
 - All class-dependent numbers are tables indexed by `CLASS_*`; never branch on class in logic code.
 - Fuel costs come only from `fuel_cost` (class, orientation, distance); `FUEL_NONE` ($FF) marks an illegal distance and can never be afforded.
 - Hit percentages come only from `hit_chance` (class, orientation, range), which returns 0 with carry clear beyond the class's firing range. The table itself depends on orientation and range only.
+- Randomness comes only from `src/rng.s`: xorshift32 in the 4 bytes at `rng_state`, seeded through `rng_seed` (rt0-rt3, zero becomes a default). `resolve_hit` takes a percent, returns carry for hit and the roll in A, and draws through `roll_vec` so tests can inject rolls. `tools/rng_ref.py` is the byte-exact host mirror; the self-tests hold known answers from it, so any change to the generator must update both and will invalidate replays.
 - No rendering or sound from rules code (spec section 32); it will emit events for the display layer.
 - Every value is 8-bit; the largest in the spec is max fuel, 240.
 

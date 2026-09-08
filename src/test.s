@@ -94,6 +94,22 @@
   sta sec_name+1
   jsr section_end
 
+  jsr section_begin
+  jsr test_rng
+  lda #<s_sec_rng
+  sta sec_name
+  lda #>s_sec_rng
+  sta sec_name+1
+  jsr section_end
+
+  jsr section_begin
+  jsr test_resolve
+  lda #<s_sec_resolve
+  sta sec_name
+  lda #>s_sec_resolve
+  sta sec_name+1
+  jsr section_end
+
 * Grand total: a "section" that started from zero.
   stz sec_pass
   stz sec_pass+1
@@ -449,6 +465,179 @@ sweep_bounds
 call_lookup jmp (lookup_vec)
 call_range  jmp (range_vec)
 
+*----------------------------------------------------------
+* Section 6 - the generator matches tools/rng_ref.py byte
+* for byte: state after 1 and 3 steps from seed $12345678
+* (8 checks), a zero seed is replaced (1), and the first
+* eight rng_roll100 values (8). 17 checks. If the generator
+* changes deliberately, regenerate these with rng_ref.py.
+*----------------------------------------------------------
+test_rng
+ MX %11
+ jsr seed_test_rng
+ jsr rng_next
+ ldx #0
+:state1
+ lda kat_state1,x
+ sta rt1
+ lda rng_state,x
+ jsr check_eq
+ inx
+ cpx #4
+ bne :state1
+ jsr rng_next
+ jsr rng_next
+ ldx #0
+:state3
+ lda kat_state3,x
+ sta rt1
+ lda rng_state,x
+ jsr check_eq
+ inx
+ cpx #4
+ bne :state3
+* A zero seed must not leave the state at zero.
+ stz rt0
+ stz rt1
+ stz rt2
+ stz rt3
+ jsr rng_seed
+ lda rng_state
+ ora rng_state+1
+ ora rng_state+2
+ ora rng_state+3
+ beq :zero
+ lda #1
+:zero
+ ldx #1
+ stx rt1
+ jsr check_eq
+* First eight rolls. Draw before loading rt1: the generator
+* clobbers rt0-rt3.
+ jsr seed_test_rng
+ ldx #0
+:roll
+ jsr rng_roll100
+ sta t_cost
+ lda kat_rolls,x
+ sta rt1
+ lda t_cost
+ jsr check_eq
+ inx
+ cpx #8
+ bne :roll
+ rts
+
+* Seed $12345678, the spec 33 example seed.
+seed_test_rng
+ lda #$78
+ sta rt0
+ lda #$56
+ sta rt1
+ lda #$34
+ sta rt2
+ lda #$12
+ sta rt3
+ jmp rng_seed
+
+* From: python3 tools/rng_ref.py
+kat_state1 dfb 165,90,152,135
+kat_state3 dfb 196,244,32,72
+kat_rolls  dfb 35,21,72,29,12,41,37,97
+
+*----------------------------------------------------------
+* Section 7 - resolve_hit with injected rolls: hit exactly
+* when roll < percent, and the roll is reported back
+* (8 cases x 2 = 16 checks). Then with the real generator:
+* 100% hits, 0% misses (2), and 255 trials at 50% give the
+* exact count rng_ref.py predicts (1). 19 checks.
+*----------------------------------------------------------
+test_resolve
+ MX %11
+ lda #<stub_roll
+ sta roll_vec
+ lda #>stub_roll
+ sta roll_vec+1
+ ldx #0                    ; 3 bytes per case
+:case
+ lda rh_cases,x
+ cmp #$FF
+ beq :done
+ lda rh_cases+1,x
+ sta stub_value
+ lda rh_cases,x            ; percent
+ phx
+ jsr resolve_hit
+ sta t_cost                ; roll reported
+ lda #0
+ rol
+ sta t_legal               ; 1 = hit
+ plx
+ lda rh_cases+2,x
+ sta rt1
+ lda t_legal
+ jsr check_eq              ; hit or miss as expected
+ lda rh_cases+1,x
+ sta rt1
+ lda t_cost
+ jsr check_eq              ; the injected roll came back
+ inx
+ inx
+ inx
+ bra :case
+:done
+ lda #<rng_roll100
+ sta roll_vec
+ lda #>rng_roll100
+ sta roll_vec+1
+ jsr seed_test_rng
+ lda #100
+ jsr resolve_hit
+ lda #0
+ rol
+ ldx #1
+ stx rt1
+ jsr check_eq              ; 100% always hits
+ lda #0
+ jsr resolve_hit
+ lda #0
+ rol
+ stz rt1
+ jsr check_eq              ; 0% never hits
+ jsr seed_test_rng
+ stz t_cost                ; hit counter
+ ldx #255
+:trial
+ lda #50
+ jsr resolve_hit
+ bcc :miss
+ inc t_cost
+:miss
+ dex
+ bne :trial
+ lda #138                  ; from rng_ref.py --trials 255 --percent 50
+ sta rt1
+ lda t_cost
+ jsr check_eq
+ rts
+
+stub_roll
+ lda stub_value
+ rts
+stub_value ds 1
+
+* percent, injected roll, expected (1 hit / 0 miss)
+rh_cases
+ dfb 100,99,1
+ dfb 100,0,1
+ dfb 0,0,0
+ dfb 40,39,1
+ dfb 40,40,0
+ dfb 40,41,0
+ dfb 98,97,1
+ dfb 98,98,0
+ dfb $FF
+
 lookup_vec ds 2
 range_vec  ds 2
 t_class    ds 1
@@ -589,6 +778,10 @@ s_sec_hit    asc 'HIT TABLE'
              dfb 0
 s_sec_fire   asc 'FIRE RANGE BOUNDS'
              dfb 0
+s_sec_rng    asc 'RANDOM GENERATOR'
+             dfb 0
+s_sec_resolve asc 'RESOLVE HIT'
+             dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0
 s_first_fail asc 'FIRST FAILING CHECK ID'
@@ -597,4 +790,5 @@ s_return     asc 'PRESS ANY KEY TO RETURN TO TITLE'
              dfb 0
 
   put tables
+  put rng
   put common
