@@ -59,6 +59,7 @@ KEY_DOWN   = $0A
 KEY_RETURN = $0D
 KEY_ESC    = $1B
 KEY_SPACE  = $20
+KEY_TAB    = $09
 
 dbg_palette
  dw $0000,$0555,$05C3,$0261,$026E,$0A63,$0EEE,$0FE3
@@ -96,6 +97,9 @@ dbg_init
  sta last_sec
  lda #s_hint
  sta msg_ptr
+ stz status_view
+ lda #HUD_Y+10
+ sta hud1_y
  lda #1
  sta dirty
  rts
@@ -189,6 +193,20 @@ handle_key
  sta quit                  ; any key after the end
  rts
 :playing
+ lda key_code
+ cmp #KEY_TAB
+ bne :not_tab
+ jmp status_toggle         ; board -> own status -> opponent's -> board
+:not_tab
+ lda status_view
+ beq :board_keys
+ lda key_code
+ cmp #KEY_ESC
+ bne :ignored
+ jmp status_close
+:ignored
+ rts                       ; other keys wait for the board
+:board_keys
  ldx #0
 :scan
  lda key_table,x
@@ -700,6 +718,10 @@ reason_names da s_ok,s_by_cruiser,s_by_time,s_by_surrender,s_by_stalemate
 draw_all
  MX %00
  jsr eng_events_clear      ; the debug board reads state, not events
+ lda status_view
+ beq :board
+ jmp status_draw
+:board
  jsr draw_board
  jsr draw_units
  jsr draw_highlights
@@ -1219,8 +1241,13 @@ draw_hud
 * or the pause, or the result.
 draw_hud1
  MX %00
- lda #HUD_ADDR
- sta fr_addr
+ lda hud1_y
+ sec
+ sbc #10
+ jsr rows_to_offset
+ clc
+ adc #SCREEN
+ sta fr_addr               ; the strip from 10 above the baseline
  lda #SCREEN_ROW
  sta fr_w
  lda #11
@@ -1298,7 +1325,7 @@ draw_hud1
  lda #line_buf
  sta str_ptr
  ldx #2
- ldy #HUD_Y+10
+ ldy hud1_y
  jmp draw_cstr
 
 side_hud_colour dfb COL_RED,COL_YELLOW
@@ -1526,7 +1553,7 @@ s_tank          asc 'TANK'
                 dfb 0
 s_car           asc 'CAR'
                 dfb 0
-s_hint          asc 'RETURN SELECT  E END  P PAUSE  1-0 BOARD'
+s_hint          asc 'RETURN SELECT  E END  TAB STATUS  1-0 BOARD'
                 dfb 0
 s_board_tag     asc 'B'
                 dfb 0
@@ -1656,6 +1683,7 @@ quit       ds 2
 over_shown ds 2
 shown_side ds 2
 last_sec   ds 2
+hud1_y     ds 2            ; baseline of the clock line (board: HUD_Y+10)
 msg_ptr    ds 2
 key_code   ds 2
 key_vec    ds 2

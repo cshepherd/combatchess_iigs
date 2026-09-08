@@ -158,7 +158,9 @@ setup_game
 * The captured boards (generated).
   put boards
 
-* Debug board (milestone 3).
+* Debug board (milestone 3) and the status display.
   put dbg
+  put status
+  put status_art
 
   put common

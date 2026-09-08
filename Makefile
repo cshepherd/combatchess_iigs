@@ -37,6 +37,12 @@ src/title_art.s: tools/gen_title_art.py reference/raw/title/title_plaque.bin ref
 
 out/title: src/title_art.s
 
+# The STATUS plaque bitmap, generated from the captured status screen.
+src/status_art.s: tools/gen_plaque.py reference/raw/status/status_own_mode7_7D2C.bin reference/raw/status/status_charset.bin
+	python3 tools/gen_plaque.py --codes reference/raw/status/status_own_mode7_7D2C.bin --rows 5 --charset reference/raw/status/status_charset.bin --slots 8,14,0,11,9 --label status --out src/status_art.s
+
+out/game: src/status.s src/status_art.s
+
 .PHONY: all package clean
 all: package
 package: $(IMGFILE)

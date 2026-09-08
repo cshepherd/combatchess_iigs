@@ -26,6 +26,7 @@ uncropped; the palette index of every pixel is the Atari colour byte.
 | Title | $7300 | $7200 mode 7 (6 lines), $4E00 mode 2 (12 lines) | START game, OPTION options, SELECT demo |
 | Options | $6421 | $7C00 mode 2, 24 lines | OPTION moves the cursor, SELECT changes, START returns to the title |
 | Game | $2180 | $7A00 mode 7, 11 lines of 20; $1FB0 mode 2, 2 lines | board + two status lines |
+| Status | $4409 | $7D2C mode 7, 5 lines of 20 (the picture); $7D90 mode 2, 12 lines (the roster); $1FB0 mode 2, 2 lines | SELECT from the game: the side to move, SELECT again the opponent, SELECT again the board; character set $9A00 |
 
 Board geometry: the board is ANTIC mode 7, 20 x 11 characters of
 16 x 16 pixels, starting after 3 x 8 blank scanlines. One screen byte
@@ -102,10 +103,44 @@ twelve text lines (`title_text.txt`). `options_ranges.md` and
 cycle of each. `tools/gen_title_art.py` turns the plaque into the IIGS
 title bitmap.
 
-Still to capture (checklist A02-A06, C, 9-11, 13): title blink or
-colour-cycle states and the demonstration game, both status displays,
-cursor states, HUD extremes, firing and destruction effects,
-typography.
+Status screens (checklist C01, C02): `reference/raw/status/` holds
+`status_own.png` and `status_other.png` with their display lists,
+colour registers and screen memory (`status_own.json`,
+`status_other.json`, `status_own_mode7_7D2C.bin`, and the character
+set at $9A00 as `status_charset.bin`), from
+`tools/atari_status_capture.py`. The picture is five mode-7 rows: a
+tank in COLPF0 ($34 hull brown for Red, $00 for Black) and the word
+STATUS in COLPF3 $58 purple on the grey background $0A. The roster is
+twelve 40-column text rows (the `.bin` files stop after 340 bytes, so
+the text is read from the RAM dump at $7D90):
+
+```
+ **STATUS FOR RED    FUEL AMMO GAME SQR
+                                DMG DMG
+ BATTLE CRUISER       240  16    30  15
+ TANK                 240  16    24  12
+ TANK                 240  16    24  12
+ TANK
+ ARMOURED CAR         160  08    18  09
+ ARMOURED CAR         160  08    18  09
+ ARMOURED CAR         160  08    18  09
+ ARMOURED CAR         160  08    18  09
+ ARMOURED CAR
+```
+
+Nine fixed rows in class order; a unit the army does not have leaves
+its name alone (Red's default army has two tanks and four cars).
+Two-digit values carry a leading zero. The spelling is ARMOURED here
+and ARMORED on the options screen. The game's two HUD lines stay at
+the bottom, and the clock runs while the screen is shown
+(`status_own_5s.json` was read after a five-second pause following
+`status_own.json`, each read taking a moment: the clock went from
+19:55 to 19:48).
+
+Still to capture (checklist A02-A06, 9-11, 13): title blink or
+colour-cycle states and the demonstration game, cursor states, HUD
+extremes, firing and destruction effects, typography, and how the
+status roster shows a destroyed unit.
 
 ## Starting positions
 
@@ -144,6 +179,12 @@ Spec section 34 items settled or narrowed by this session:
   (Black, Red), ARMORED CARS (Black, Red), who starts first, computer
   side, time limits (Black, Red, minutes), MOVES PER TURN, SHOOT
   OPTION.
+- **Timer behaviour during status screens** (spec 34): the clocks keep
+  running; the side to move's clock read 19:55 on entering the
+  status screen and 19:48 about seven seconds later.
+- **Status display** (spec 28): nine fixed roster rows, name alone for
+  a unit the army lacks, `FUEL AMMO GAME SQR / DMG DMG` heads, the
+  tank in the picture coloured by side, both HUD lines kept.
 - **Status line** (checklist H): two lines of 40 columns at $1FB0:
   `MM:SS # SQ=15, GM=30, AM=16, FL=240` for Red (`#`) and `_` for
   Black, matching spec section 25.

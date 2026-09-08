@@ -1,0 +1,44 @@
+{
+ "dlist": [
+  "4409: 3x 8 BLANK",
+  "440C: LMS 7D2C MODE 7",
+  "440F: 3x MODE 7",
+  "4412: DLI MODE 7",
+  "4413: 12x MODE 2",
+  "441F: LMS 1FB0 MODE 2",
+  "4422: MODE 2",
+  "4423: JVB 4409"
+ ],
+ "blocks": [
+  {
+   "addr": "$7D2C",
+   "mode": 7,
+   "rows": 17,
+   "codes_file": "status_own_mode7_7D2C.bin"
+  },
+  {
+   "addr": "$1FB0",
+   "mode": 2,
+   "rows": 2,
+   "text": [
+    "  19:55 #  SQ=15, GM=30, AM=16, FL=240",
+    "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+   ]
+  }
+ ],
+ "chbas": "$9A00",
+ "colours_shadow": [
+  "$34",
+  "$00",
+  "$0C",
+  "$58",
+  "$0A"
+ ],
+ "gtia": {
+  "COLPF0": "34",
+  "COLPF1": "00",
+  "COLPF2": "0C",
+  "COLPF3": "58",
+  "COLBK": "0A"
+ }
+}
