@@ -36,12 +36,14 @@
   jsr set_colors
   lda #s_heading
   sta str_ptr
-  ldx #40
+  ldx #8
   ldy #20
   jsr draw_cstr
 
   lda #36
   sta line_y
+  lda #8
+  sta col_x
 
   sep $30
   MX %11
@@ -166,6 +168,14 @@
   sta sec_name+1
   jsr section_end
 
+  jsr section_begin
+  jsr test_fire
+  lda #<s_sec_fire_act
+  sta sec_name
+  lda #>s_sec_fire_act
+  sta sec_name+1
+  jsr section_end
+
 * Grand total: a "section" that started from zero.
   stz sec_pass
   stz sec_pass+1
@@ -191,12 +201,15 @@
   jsr set_colors
   lda #s_first_fail
   sta str_ptr
-  ldx #40
+  ldx col_x
   ldy line_y
   jsr draw_cstr
   lda #num_buf
   sta str_ptr
-  ldx #200
+  lda col_x
+  clc
+  adc #NUM_COL
+  tax
   ldy line_y
   jsr draw_cstr
 :no_fail
@@ -205,7 +218,7 @@
   jsr set_colors
   lda #s_return
   sta str_ptr
-  ldx #40
+  ldx #8
   ldy #194
   jsr draw_cstr
 
@@ -2344,6 +2357,508 @@ mv_case
  jsr move_validate
  jmp check_eq
 
+*----------------------------------------------------------
+* Section 15 - the fire action on a built board, rolls
+* injected through roll_vec.
+*
+*   red cruiser (1,5) id 0, red tank (5,5) id 1,
+*   red car (5,8) id 2, black cruiser (12,5) id 11,
+*   black tank (5,1) id 12, black car (9,9) id 13
+*   all clear; a tree and then water at (8,5) for one case
+*
+* Placing the units (6); legal shots priced for the tank in
+* three directions (7); non-lines and the car's short reach
+* (3); the cruiser's long shot blocked by its own tank, then
+* allowed by the rule (4); friendly, self and nonsense
+* targets (3); trees block, water does not (2); no ammo (1);
+* the per-turn target rule and its reset (2); a hit with
+* every side effect and event (26); the same target again
+* (1); a miss (10); a bridge destroyed under a unit (21); a
+* kill, then the dead can neither be shot nor shoot (21);
+* damage floors at 0 (3); the cruiser's damage (2).
+* 112 checks.
+*----------------------------------------------------------
+test_fire
+ MX %11
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ jsr events_clear
+ lda #<stub_roll
+ sta roll_vec
+ lda #>stub_roll
+ sta roll_vec+1
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #1
+ ldy #5
+ jsr add_unit              ; id 0
+ lda #CLASS_TANK
+ ldx #5
+ ldy #5
+ jsr add_unit              ; id 1
+ lda #CLASS_CAR
+ ldx #5
+ ldy #8
+ jsr add_unit              ; id 2
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #12
+ ldy #5
+ jsr add_unit              ; id 11
+ lda #CLASS_TANK
+ ldx #5
+ ldy #1
+ jsr add_unit              ; id 12
+ lda #CLASS_CAR
+ ldx #9
+ ldy #9
+ jsr add_unit              ; id 13
+* legal shots for the tank
+ lda #FR_OK
+ sta expect
+ lda #1
+ ldx #11
+ jsr fr_case               ; east 7: the tank's full reach
+ lda #64
+ sta expect
+ lda fr_chance
+ jsr check_eq
+ lda #4
+ sta expect
+ lda fr_damage
+ jsr check_eq
+ lda #FR_OK
+ sta expect
+ lda #1
+ ldx #12
+ jsr fr_case               ; north 4
+ lda #82
+ sta expect
+ lda fr_chance
+ jsr check_eq
+ lda #FR_OK
+ sta expect
+ lda #1
+ ldx #13
+ jsr fr_case               ; diagonal 4
+ lda #72
+ sta expect
+ lda fr_chance
+ jsr check_eq
+* non-lines and the car's reach
+ lda #FR_NOT_LINE
+ sta expect
+ lda #2
+ ldx #13
+ jsr fr_case
+ lda #2
+ ldx #11
+ jsr fr_case
+ lda #FR_OUT_OF_RANGE
+ sta expect
+ lda #2
+ ldx #12
+ jsr fr_case               ; north 7, the car reaches 4
+* the cruiser's long shot: its own tank stands at (5,5)
+ lda #FR_BLOCKED
+ sta expect
+ lda #0
+ ldx #11
+ jsr fr_case
+ stz rule_units_block_los
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #11
+ jsr fr_case
+ lda #40
+ sta expect
+ lda fr_chance
+ jsr check_eq              ; orthogonal 11
+ lda #5
+ sta expect
+ lda fr_damage
+ jsr check_eq
+ lda #1
+ sta rule_units_block_los
+* targets that are not enemies
+ lda #FR_NO_TARGET
+ sta expect
+ lda #1
+ ldx #2
+ jsr fr_case               ; friendly
+ lda #1
+ ldx #1
+ jsr fr_case               ; itself
+ lda #1
+ ldx #22
+ jsr fr_case               ; no such unit
+* terrain in the line of fire
+ lda #TERR_TREE
+ ldx #8
+ ldy #5
+ jsr set_cell
+ lda #FR_BLOCKED
+ sta expect
+ lda #1
+ ldx #11
+ jsr fr_case
+ lda #TERR_WATER
+ ldx #8
+ ldy #5
+ jsr set_cell
+ lda #FR_OK
+ sta expect
+ lda #1
+ ldx #11
+ jsr fr_case
+ lda #TERR_CLEAR
+ ldx #8
+ ldy #5
+ jsr set_cell
+* ammunition
+ stz unit_ammo+1
+ lda #FR_NO_AMMO
+ sta expect
+ lda #1
+ ldx #11
+ jsr fr_case
+ lda #16
+ sta unit_ammo+1
+* the per-turn target rule
+ lda #1
+ ldx #11
+ jsr unit_mark_fired_at
+ lda #FR_ALREADY
+ sta expect
+ lda #1
+ ldx #11
+ jsr fr_case
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ lda #FR_OK
+ sta expect
+ lda #1
+ ldx #11
+ jsr fr_case
+* a hit: roll 63 against 64
+ lda #63
+ sta stub_value
+ lda #FR_OK
+ sta expect
+ lda #1
+ ldx #11
+ jsr fire_execute
+ jsr check_eq
+ lda #FR_HIT
+ sta expect
+ lda fr_outcome
+ jsr check_eq
+ lda #63
+ sta expect
+ lda fr_roll
+ jsr check_eq
+ lda #15
+ sta expect
+ lda unit_ammo+1
+ jsr check_eq
+ lda #1
+ sta expect
+ lda unit_shots+1
+ jsr check_eq
+ lda #1
+ ldx #11
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ jsr check_eq              ; remembered
+ lda #26
+ sta expect
+ lda unit_hp+11
+ jsr check_eq              ; 30 - 4
+ lda #11
+ sta expect
+ lda unit_terr_hp+11
+ jsr check_eq              ; 15 - 4
+ lda #EV_SHOT_FIRED
+ jsr pop_type
+ lda #1
+ sta expect
+ lda ev_p0
+ jsr check_eq
+ lda #11
+ sta expect
+ lda ev_p1
+ jsr check_eq
+ lda #EV_SHOT_HIT
+ jsr pop_type
+ lda #63
+ sta expect
+ lda ev_p2
+ jsr check_eq
+ lda #EV_UNIT_DAMAGED
+ jsr pop_type
+ lda #11
+ sta expect
+ lda ev_p0
+ jsr check_eq
+ lda #4
+ sta expect
+ lda ev_p1
+ jsr check_eq
+ lda #26
+ sta expect
+ lda ev_p2
+ jsr check_eq
+ lda #EV_TERRAIN_DAMAGED
+ jsr pop_type
+ lda #12
+ sta expect
+ lda ev_p0
+ jsr check_eq
+ lda #5
+ sta expect
+ lda ev_p1
+ jsr check_eq
+ lda #11
+ sta expect
+ lda ev_p2
+ jsr check_eq
+ jsr pop_none
+* the same target again this turn
+ lda #FR_ALREADY
+ sta expect
+ lda #1
+ ldx #11
+ jsr fr_case
+* a miss: roll 64 against 64
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ lda #64
+ sta stub_value
+ lda #FR_OK
+ sta expect
+ lda #1
+ ldx #11
+ jsr fire_execute
+ jsr check_eq
+ lda #FR_MISS
+ sta expect
+ lda fr_outcome
+ jsr check_eq
+ lda #14
+ sta expect
+ lda unit_ammo+1
+ jsr check_eq
+ lda #26
+ sta expect
+ lda unit_hp+11
+ jsr check_eq              ; untouched
+ lda #EV_SHOT_FIRED
+ jsr pop_type
+ lda #EV_SHOT_MISSED
+ jsr pop_type
+ lda #64
+ sta expect
+ lda ev_p2
+ jsr check_eq
+ jsr pop_none
+* a bridge destroyed under the black tank
+ lda #TERR_BRIDGE
+ ldx #5
+ ldy #1
+ jsr set_cell
+ lda #4
+ sta unit_terr_hp+12
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ stz stub_value
+ lda #FR_OK
+ sta expect
+ lda #1
+ ldx #12
+ jsr fire_execute
+ jsr check_eq
+ lda #FR_HIT
+ sta expect
+ lda fr_outcome
+ jsr check_eq
+ lda #20
+ sta expect
+ lda unit_hp+12
+ jsr check_eq
+ stz expect
+ lda unit_terr_hp+12
+ jsr check_eq
+ lda #TERR_WATER
+ sta expect
+ ldx #5
+ ldy #1
+ jsr get_cell
+ jsr check_eq
+ lda #UF_ALIVE
+ sta expect
+ lda unit_flags+12
+ and #UF_ALIVE
+ jsr check_eq              ; still there (UNVERIFIED)
+ lda #EV_SHOT_FIRED
+ jsr pop_type
+ lda #EV_SHOT_HIT
+ jsr pop_type
+ lda #EV_UNIT_DAMAGED
+ jsr pop_type
+ lda #EV_TERRAIN_DAMAGED
+ jsr pop_type
+ lda #EV_TERRAIN_DESTROYED
+ jsr pop_type
+ lda #5
+ sta expect
+ lda ev_p0
+ jsr check_eq
+ lda #1
+ sta expect
+ lda ev_p1
+ jsr check_eq
+ lda #TERR_BRIDGE
+ sta expect
+ lda ev_p2
+ jsr check_eq
+ lda #TERR_WATER
+ sta expect
+ lda ev_p3
+ jsr check_eq
+ jsr pop_none
+* a kill: the black car down to 4
+ lda #4
+ sta unit_hp+13
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ lda #FR_OK
+ sta expect
+ lda #1
+ ldx #13
+ jsr fire_execute
+ jsr check_eq
+ lda #FR_KILL
+ sta expect
+ lda fr_outcome
+ jsr check_eq
+ stz expect
+ lda unit_hp+13
+ jsr check_eq
+ lda unit_flags+13
+ and #UF_ALIVE
+ jsr check_eq
+ ldx #9
+ ldy #9
+ jsr get_occupant
+ jsr check_eq              ; square emptied
+ lda #EV_SHOT_FIRED
+ jsr pop_type
+ lda #EV_SHOT_HIT
+ jsr pop_type
+ lda #EV_UNIT_DAMAGED
+ jsr pop_type
+ lda #EV_TERRAIN_DAMAGED
+ jsr pop_type
+ lda #EV_UNIT_DESTROYED
+ jsr pop_type
+ lda #13
+ sta expect
+ lda ev_p0
+ jsr check_eq
+ lda #9
+ sta expect
+ lda ev_p1
+ jsr check_eq
+ lda ev_p2
+ jsr check_eq
+ jsr pop_none
+ lda #FR_NO_TARGET
+ sta expect
+ lda #1
+ ldx #13
+ jsr fr_case               ; the dead cannot be shot
+ lda #FR_NO_UNIT
+ sta expect
+ lda #13
+ ldx #1
+ jsr fr_case               ; nor shoot
+* damage floors at zero
+ lda #2
+ sta unit_hp+11
+ lda #1
+ sta unit_terr_hp+11
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ lda #1
+ ldx #11
+ jsr fire_execute
+ lda #FR_KILL
+ sta expect
+ lda fr_outcome
+ jsr check_eq
+ stz expect
+ lda unit_hp+11
+ jsr check_eq
+ lda unit_terr_hp+11
+ jsr check_eq
+ jsr events_clear
+* the cruiser hits for 5: north-east 4 at the black tank
+ lda #0
+ ldx #12
+ jsr fire_execute
+ lda #5
+ sta expect
+ lda fr_damage
+ jsr check_eq
+ lda #15
+ sta expect
+ lda unit_hp+12
+ jsr check_eq              ; 20 - 5
+ jsr events_clear
+ lda #<rng_roll100
+ sta roll_vec
+ lda #>rng_roll100
+ sta roll_vec+1
+ rts
+
+* fr_case - A = attacker, X = target, expect = the FR_*
+* reason wanted. Validates and checks the reason; fr_* stay
+* for further checks.
+fr_case
+ MX %11
+ jsr fire_validate
+ jmp check_eq
+
+* pop_type - A = the event type wanted. Pops and checks that
+* a record came (1) and its type (1); ev_p* stay for more.
+pop_type
+ MX %11
+ sta t_max
+ jsr event_pop
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq
+ lda t_max
+ sta expect
+ lda ev_type
+ jmp check_eq
+
+* pop_none - checks that the queue is empty (1).
+pop_none
+ MX %11
+ jsr event_pop
+ lda #0
+ rol
+ stz expect
+ jmp check_eq
+
 * percent, injected roll, expected (1 hit / 0 miss)
 rh_cases
  dfb 100,99,1
@@ -2409,8 +2924,15 @@ expect          ds 1     ; expected value for check_eq; engine code never touche
 * section_begin / section_end - Snapshot the tallies, then
 * after the section's checks draw "NAME   passed/run" on
 * the next line, green if nothing failed, red otherwise.
-* Entered and left in 8-bit A/X/Y.
+* Rows run down the left column and continue in a second
+* column once the first is full. Entered and left in 8-bit
+* A/X/Y.
 *----------------------------------------------------------
+NUM_COL  = 92              ; numbers this far right of the name
+COL_STEP = 160             ; second column starts here
+ROW_STEP = 10
+ROW_TOP  = 36
+ROW_LAST = 176             ; last baseline before the footer
 section_begin
  MX %11
  lda test_pass
@@ -2459,18 +2981,30 @@ section_end
  jsr set_colors
  lda sec_name
  sta str_ptr
- ldx #40
+ ldx col_x
  ldy line_y
  jsr draw_cstr
  lda #num_buf
  sta str_ptr
- ldx #200
+ lda col_x
+ clc
+ adc #NUM_COL
+ tax
  ldy line_y
  jsr draw_cstr
  lda line_y
  clc
- adc #10
+ adc #ROW_STEP
  sta line_y
+ cmp #ROW_LAST+1
+ bcc :fits
+ lda #ROW_TOP
+ sta line_y
+ lda col_x
+ clc
+ adc #COL_STEP
+ sta col_x
+:fits
  sep $30
  MX %11
  rts
@@ -2482,22 +3016,23 @@ num_pass  ds 2
 num_fail  ds 2
 num_total ds 2
 line_y    ds 2
+col_x     ds 2
 num_buf   asc '   /   '
           dfb 0
 
 s_heading    asc 'COMBAT CHESS RULES SELF-TESTS'
              dfb 0
-s_sec_class  asc 'CLASS TABLES'
+s_sec_class  asc 'CLASS TABLE'
              dfb 0
 s_sec_fuel   asc 'FUEL TABLE'
              dfb 0
-s_sec_range  asc 'MOVE RANGE BOUNDS'
+s_sec_range  asc 'MOVE BOUNDS'
              dfb 0
 s_sec_hit    asc 'HIT TABLE'
              dfb 0
-s_sec_fire   asc 'FIRE RANGE BOUNDS'
+s_sec_fire   asc 'FIRE BOUNDS'
              dfb 0
-s_sec_rng    asc 'RANDOM GENERATOR'
+s_sec_rng    asc 'GENERATOR'
              dfb 0
 s_sec_resolve asc 'RESOLVE HIT'
              dfb 0
@@ -2515,9 +3050,11 @@ s_sec_events asc 'EVENT QUEUE'
              dfb 0
 s_sec_move   asc 'MOVEMENT'
              dfb 0
+s_sec_fire_act asc 'FIRE'
+             dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0
-s_first_fail asc 'FIRST FAILING CHECK ID'
+s_first_fail asc 'FIRST FAIL'
              dfb 0
 s_return     asc 'PRESS ANY KEY TO RETURN TO TITLE'
              dfb 0
@@ -2529,4 +3066,5 @@ s_return     asc 'PRESS ANY KEY TO RETURN TO TITLE'
   put events
   put move
   put rng
+  put fire
   put common

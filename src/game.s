@@ -74,5 +74,6 @@ s_return  asc 'PRESS ANY KEY TO RETURN TO TITLE'
   put events
   put move
   put rng
+  put fire
 
   put common

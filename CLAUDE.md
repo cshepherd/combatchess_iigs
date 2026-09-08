@@ -46,7 +46,7 @@ Every part is a SYS file with `ORG $2000` that does `put shared` at the top (equ
 
 ## Rules engine
 
-Lives in `src/tables.s`, `src/board.s`, `src/line.s`, `src/units.s`, `src/events.s`, `src/move.s`, `src/rng.s` and the includes that will follow them (fire, turns), included by GAME and TEST in that order. Conventions:
+Lives in `src/tables.s`, `src/board.s`, `src/line.s`, `src/units.s`, `src/events.s`, `src/move.s`, `src/rng.s`, `src/fire.s` and the includes that will follow them (turns, game), included by GAME and TEST in that order. Conventions:
 
 - Routines are entered in native mode with 8-bit A/X/Y (`MX %11`), DBR $00, D $0000, and say so if they differ.
 - Scratch is the direct-page range `rt0`-`rt3`, `rptr`, `rptr2`, `rt4`-`rt7` ($E0-$EB) from shared.s, live only within one routine. Each routine's header says which it clobbers.
@@ -59,7 +59,8 @@ Lives in `src/tables.s`, `src/board.s`, `src/line.s`, `src/units.s`, `src/events
 - Units are parallel arrays in `src/units.s` indexed by id: Red 0-10, Black 11-21, slots filled in add order. `unit_add` (parameters in `un_side`/`un_class`/`un_x`/`un_y`) enforces placement and the spec 6 army limits from `side_class_max`; `unit_set_pos` and `unit_kill` are the only other writers of the occupant map. `UF_ALIVE` is bit 7 of `unit_flags`. The spec 13 fired-at rule is a 16-bit mask per attacker over enemy slots, cleared by `units_begin_turn`.
 - Randomness comes only from `src/rng.s`: xorshift32 in the 4 bytes at `rng_state`, seeded through `rng_seed` (rt0-rt3, zero becomes a default). `resolve_hit` takes a percent, returns carry for hit and the roll in A, and draws through `roll_vec` so tests can inject rolls. `tools/rng_ref.py` is the byte-exact host mirror; the self-tests hold known answers from it, so any change to the generator must update both and will invalidate replays.
 - No rendering or sound from rules code (spec section 32). Actions queue events through `event_push` (record in `ev_type`, `ev_p0`-`ev_p4`; types and parameter meanings listed in `src/events.s`); the display layer drains them with `event_pop`.
-- Actions come in pairs: a `*_validate` that checks and prices without touching state and returns a reason code (`MV_*`), and a `*_execute` that validates, changes state and queues events. Turn-level rules (whose turn, moves left, Shoot Option phase) are checked by the turn code around them, not inside.
+- Actions come in pairs: a `*_validate` that checks and prices without touching state and returns a reason code (`MV_*`, `FR_*`), and a `*_execute` that validates, changes state and queues events. Turn-level rules (whose turn, moves left, Shoot Option phase) are checked by the turn code around them, not inside. Victory is the game layer's check after an action, using `fr_outcome`.
+- A hit goes through `unit_take_hit`, which drops unit HP and terrain HP together (spec 23) and destroys the square or the unit when either reaches 0. What happens to a unit whose square is destroyed under it, and what a miss does instead (`miss_resolve`, spec 12), are UNVERIFIED and marked as such in `src/fire.s`.
 - Every value is 8-bit; the largest in the spec is max fuel, 240.
 
 ## Bank $00 map
