@@ -41,7 +41,11 @@ out/title: src/title_art.s
 src/status_art.s: tools/gen_plaque.py reference/raw/status/status_own_mode7_7D2C.bin reference/raw/status/status_charset.bin
 	python3 tools/gen_plaque.py --codes reference/raw/status/status_own_mode7_7D2C.bin --rows 5 --charset reference/raw/status/status_charset.bin --slots 8,14,0,11,9 --label status --out src/status_art.s
 
-out/game: src/status.s src/status_art.s
+# The board character set, looks and colours from the captured boards.
+src/board_art.s: tools/gen_board_art.py reference/raw/boards/board_charset.bin reference/raw/boards/boards_capture.json $(wildcard reference/raw/boards/board*_codes.txt) $(wildcard reference/raw/boards/board*.png)
+	python3 tools/gen_board_art.py
+
+out/game: src/status.s src/status_art.s src/art.s src/board_art.s
 
 .PHONY: all package clean
 all: package

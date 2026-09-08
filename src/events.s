@@ -16,9 +16,9 @@
 *----------------------------------------------------------
 EV_NONE              = 0
 EV_UNIT_MOVED        = 1   ; unit, from x, from y, to x, to y
-EV_SHOT_FIRED        = 2   ; attacker, target, -, -, -
-EV_SHOT_HIT          = 3   ; attacker, target, roll, -, -
-EV_SHOT_MISSED       = 4   ; attacker, target, roll, -, -
+EV_SHOT_FIRED        = 2   ; attacker, target, -, -, -  (a square shot: FR_SQUARE, -, x, y)
+EV_SHOT_HIT          = 3   ; attacker, target, roll, -, -  (a square shot: FR_SQUARE, roll, x, y)
+EV_SHOT_MISSED       = 4   ; attacker, target, roll, -, -  (likewise)
 EV_STRAY_HIT         = 5   ; attacker, victim, x, y, -
 EV_UNIT_DAMAGED      = 6   ; unit, damage, hp left, -, -
 EV_UNIT_DESTROYED    = 7   ; unit, x, y, -, -

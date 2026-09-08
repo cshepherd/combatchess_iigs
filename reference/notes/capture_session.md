@@ -91,6 +91,7 @@ each board at its untouched start with the default armies:
 | `reference/maps/boardNN.txt` | 16: 20 x 11 map in the text notation |
 | `reference/maps/boardNN_units.txt` | 16: unit placement layer |
 | `reference/crops/terrain/charset_board1.png` | 6, 8: every glyph in all four colours |
+| `board_charset.bin` | 6, 8: the 1 KB character set from $9800, identical on all ten boards; `tools/gen_board_art.py` turns it and the codes files into the IIGS board art |
 | `reference/palette/natural.txt` and `boards_capture.json` | 12: colour registers per board |
 
 Title (checklist A01) and options (B): `reference/raw/title/`

@@ -79,7 +79,7 @@ status_close
 status_set_view
  MX %00
  sta status_view
- lda #HUD_Y+10
+ lda #HUD1_Y
  sta hud1_y
  lda status_view
  beq :board

@@ -184,6 +184,14 @@
   sta sec_name+1
   jsr section_end
 
+  jsr section_begin
+  jsr test_fire_at
+  lda #<s_sec_fire_at
+  sta sec_name
+  lda #>s_sec_fire_at
+  sta sec_name+1
+  jsr section_end
+
 * Grand total: a "section" that started from zero.
   stz sec_pass
   stz sec_pass+1
@@ -3509,6 +3517,318 @@ t_max      ds 1
 t_illegal  ds 1
 
 *----------------------------------------------------------
+* Section 17 - shots at squares (fire_validate_at,
+* fire_execute_at, turn_fire_at): a red tank at (5,5) id 0
+* and a black car at (5,2) id 11 on clear ground; a tree at
+* (7,5), a bridge at (5,7), a mountain at (3,5), a tree off
+* any line at (8,6), a tree far along the row at (19,5).
+*
+* Placing the units (2); the square with the enemy car
+* resolves to the unit (3); a tree in range is a target with the tank's odds at distance
+* 2 (5); clear ground and a mountain are not (2); off-line,
+* out of range (2); a tree in the way blocks (2); a hit
+* destroys the tree, costs a round, and queues FIRED, HIT
+* and TERRAIN_DESTROYED with the square (21); another square
+* is not refused as already shot at (1); a miss leaves the
+* bridge (9); no ammo (1); through the turn layer: not the
+* black car's turn, then the tank's shot counts and the
+* bridge becomes water (4). 52 checks.
+*----------------------------------------------------------
+test_fire_at
+ MX %11
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ jsr events_clear
+ lda #<stub_roll
+ sta roll_vec
+ lda #>stub_roll
+ sta roll_vec+1
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_TANK
+ ldx #5
+ ldy #5
+ jsr add_unit              ; id 0
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_CAR
+ ldx #5
+ ldy #2
+ jsr add_unit              ; id 11
+ lda #TERR_TREE
+ ldx #7
+ ldy #5
+ jsr set_cell
+ lda #TERR_BRIDGE
+ ldx #5
+ ldy #7
+ jsr set_cell
+ lda #TERR_MOUNTAIN
+ ldx #3
+ ldy #5
+ jsr set_cell
+ lda #TERR_TREE
+ ldx #8
+ ldy #6
+ jsr set_cell
+ lda #TERR_TREE
+ ldx #19
+ ldy #5
+ jsr set_cell
+* the enemy car's square is the car
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #5
+ ldy #2
+ jsr fire_validate_at
+ jsr check_eq
+ lda #11
+ sta expect
+ lda fr_target
+ jsr check_eq
+ lda #CLASS_TANK
+ ldx #ORIENT_ORTH
+ ldy #3
+ jsr hit_chance
+ sta expect
+ lda fr_chance
+ jsr check_eq
+* the tree at distance 2
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #7
+ ldy #5
+ jsr fire_validate_at
+ jsr check_eq
+ lda #FR_SQUARE
+ sta expect
+ lda fr_target
+ jsr check_eq
+ lda #7
+ sta expect
+ lda fr_tx
+ jsr check_eq
+ lda #5
+ sta expect
+ lda fr_ty
+ jsr check_eq
+ lda #CLASS_TANK
+ ldx #ORIENT_ORTH
+ ldy #2
+ jsr hit_chance
+ sta expect
+ lda fr_chance
+ jsr check_eq
+* clear ground and a mountain are not targets
+ lda #FR_NO_TARGET
+ sta expect
+ lda #0
+ ldx #5
+ ldy #3
+ jsr fire_validate_at
+ jsr check_eq
+ lda #0
+ ldx #3
+ ldy #5
+ jsr fire_validate_at
+ jsr check_eq
+* off any line; out of range
+ lda #FR_NOT_LINE
+ sta expect
+ lda #0
+ ldx #8
+ ldy #6
+ jsr fire_validate_at
+ jsr check_eq
+ lda #FR_OUT_OF_RANGE
+ sta expect
+ lda #0
+ ldx #19
+ ldy #5
+ jsr fire_validate_at
+ jsr check_eq
+* a tree in the way
+ lda #TERR_TREE
+ ldx #6
+ ldy #5
+ jsr set_cell
+ lda #FR_BLOCKED
+ sta expect
+ lda #0
+ ldx #7
+ ldy #5
+ jsr fire_validate_at
+ jsr check_eq
+ lda #TERR_CLEAR
+ ldx #6
+ ldy #5
+ jsr set_cell
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #7
+ ldy #5
+ jsr fire_validate_at
+ jsr check_eq
+* a hit destroys the tree
+ lda #0
+ sta stub_value
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #7
+ ldy #5
+ jsr fire_execute_at
+ jsr check_eq
+ lda #FR_HIT
+ sta expect
+ lda fr_outcome
+ jsr check_eq
+ lda #0
+ sta expect
+ lda fr_roll
+ jsr check_eq
+ lda #TERR_CLEAR
+ sta expect
+ ldx #7
+ ldy #5
+ jsr get_cell
+ jsr check_eq
+ lda #15
+ sta expect
+ lda unit_ammo
+ jsr check_eq
+ lda #1
+ sta expect
+ lda unit_shots
+ jsr check_eq
+ lda #EV_SHOT_FIRED
+ jsr pop_type
+ lda #0
+ sta expect
+ lda ev_p0
+ jsr check_eq
+ lda #FR_SQUARE
+ sta expect
+ lda ev_p1
+ jsr check_eq
+ lda #7
+ sta expect
+ lda ev_p3
+ jsr check_eq
+ lda #5
+ sta expect
+ lda ev_p4
+ jsr check_eq
+ lda #EV_SHOT_HIT
+ jsr pop_type
+ lda #0
+ sta expect
+ lda ev_p2
+ jsr check_eq
+ lda #EV_TERRAIN_DESTROYED
+ jsr pop_type
+ lda #7
+ sta expect
+ lda ev_p0
+ jsr check_eq
+ lda #5
+ sta expect
+ lda ev_p1
+ jsr check_eq
+ lda #TERR_TREE
+ sta expect
+ lda ev_p2
+ jsr check_eq
+ lda #TERR_CLEAR
+ sta expect
+ lda ev_p3
+ jsr check_eq
+* another square is not "already"
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #5
+ ldy #7
+ jsr fire_validate_at
+ jsr check_eq
+* a miss leaves the bridge
+ lda #99
+ sta stub_value
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #5
+ ldy #7
+ jsr fire_execute_at
+ jsr check_eq
+ lda #FR_MISS
+ sta expect
+ lda fr_outcome
+ jsr check_eq
+ lda #TERR_BRIDGE
+ sta expect
+ ldx #5
+ ldy #7
+ jsr get_cell
+ jsr check_eq
+ lda #14
+ sta expect
+ lda unit_ammo
+ jsr check_eq
+ lda #EV_SHOT_FIRED
+ jsr pop_type
+ lda #EV_SHOT_MISSED
+ jsr pop_type
+ lda #99
+ sta expect
+ lda ev_p2
+ jsr check_eq
+* no ammo
+ stz unit_ammo
+ lda #FR_NO_AMMO
+ sta expect
+ lda #0
+ ldx #5
+ ldy #7
+ jsr fire_validate_at
+ jsr check_eq
+ lda #14
+ sta unit_ammo
+* through the turn layer
+ jsr game_start
+ lda #TN_NOT_YOURS
+ sta expect
+ lda #11
+ ldx #5
+ ldy #5
+ jsr turn_fire_at
+ jsr check_eq
+ lda #0
+ sta stub_value
+ lda #TN_OK
+ sta expect
+ lda #0
+ ldx #5
+ ldy #7
+ jsr turn_fire_at
+ jsr check_eq
+ lda #1
+ sta expect
+ lda turn_shots
+ jsr check_eq
+ lda #TERR_WATER
+ sta expect
+ ldx #5
+ ldy #7
+ jsr get_cell
+ jsr check_eq
+ rts
+
+*----------------------------------------------------------
 * check_eq - One check: A must equal expect. Numbers the check,
 * tallies it, and remembers the first failing id.
 * 8-bit A/X/Y. Preserves X, Y and expect.
@@ -3679,6 +3999,8 @@ s_sec_move   asc 'MOVEMENT'
 s_sec_fire_act asc 'FIRE'
              dfb 0
 s_sec_turn   asc 'TURN SYSTEM'
+             dfb 0
+s_sec_fire_at asc 'SQUARE FIRE'
              dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0

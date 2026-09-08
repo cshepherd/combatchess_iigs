@@ -1,7 +1,8 @@
 *----------------------------------------------------------
-* dbg.s - The milestone 3 debug board: programmer-art
-* display, keyboard cursor and a hot-seat game loop over
-* the rules engine (spec sections 25, 26, 41).
+* dbg.s - The milestone 3 debug board: keyboard cursor, HUD
+* and a hot-seat game loop over the rules engine (spec
+* sections 25, 26, 41). The squares themselves are drawn by
+* src/art.s with the original's glyphs (milestone 4).
 *
 * PUT into game.s after the engine includes. Runs in native
 * mode with 16-bit A/X/Y (MX %00), like common.s, and drops
@@ -9,14 +10,14 @@
 * engine. Engine byte variables read from here are masked
 * with #$00FF.
 *
-* Layout: 20 x 11 cells of 16 x 15 pixels fill the top 165
-* rows; three text lines below them. Terrain is a flat
-* colour per type, a unit is a coloured box with its class
-* letter, the cursor a white outline (select), thick box
-* (move) or cross (fire). While a unit is selected, legal
-* destinations get an orange dot and legal targets a cyan
-* outline, with the line of fire dotted to the target under
-* the cursor.
+* Layout: 20 x 11 squares of 16 x 16 pixels fill the top 176
+* rows, as on the Atari; two text lines below them: the game
+* state, then the unit under the cursor or the last message.
+* The cursor is a white outline (select), thick box (move) or
+* cross (fire). While a unit is selected, legal destinations
+* get an orange dot and legal targets (enemy units, and
+* trees, bridges or grey squares to destroy) a cyan outline,
+* with the line of fire dotted to the target under the cursor.
 *
 * Keys: arrows or WASD move the cursor. RETURN selects a
 * friendly unit, then confirms a move or a shot. M and F
@@ -25,8 +26,10 @@
 * Q quits to the title; after the game ends any key quits.
 *----------------------------------------------------------
 CELL_WB    = 8             ; cell width in bytes (16 pixels)
-CELL_H     = 15            ; cell height in rows
-HUD_Y      = 165           ; first row below the board
+CELL_H     = 16            ; cell height in rows
+HUD_Y      = 176           ; first row below the board
+HUD1_Y     = HUD_Y+9       ; baselines of the two HUD lines
+HUD2_Y     = HUD_Y+20
 SCREEN_ROW = 160           ; bytes per SHR row
 SCREEN     = $2000         ; SHR pixels in bank $E1
 
@@ -34,13 +37,8 @@ MODE_SELECT = 0
 MODE_MOVE   = 1
 MODE_FIRE   = 2
 
-* Palette 0 slots used here.
+* Palette 0 slots used here; 1-5 belong to the board (art.s).
 COL_BLACK    = 0
-COL_MOUNTAIN = 1
-COL_CLEAR    = 2
-COL_TREE     = 3
-COL_WATER    = 4
-COL_BRIDGE   = 5
 COL_WHITE    = 6
 COL_YELLOW   = 7
 COL_GREY     = 8
@@ -65,15 +63,6 @@ dbg_palette
  dw $0000,$0555,$05C3,$0261,$026E,$0A63,$0EEE,$0FE3
  dw $0999,$093B,$0D22,$0BBB,$0F92,$04DE,$0800,$0FFF
 
-* Terrain colour by TERR_* type.
-terrain_colour dfb COL_CLEAR,COL_TREE,COL_WATER,COL_BRIDGE,COL_MOUNTAIN
-               dfb COL_WHITE,COL_YELLOW,COL_GREY,COL_PURPLE,COL_BLACK
-
-* Box and letter colours by side.
-side_box    dfb COL_RED,COL_BLACK
-side_letter dfb COL_TEXT,COL_YELLOW
-class_letter asc 'CTA'
-
 *----------------------------------------------------------
 * dbg_init - Palette and display state. Native 16-bit.
 *----------------------------------------------------------
@@ -86,6 +75,7 @@ dbg_init
  dex
  dex
  bpl :pal
+ jsr art_set_board
  stz cur_x
  stz cur_y
  stz mode
@@ -95,10 +85,9 @@ dbg_init
  stz over_shown
  lda #$FFFF
  sta last_sec
- lda #s_hint
- sta msg_ptr
+ stz msg_ptr
  stz status_view
- lda #HUD_Y+10
+ lda #HUD1_Y
  sta hud1_y
  lda #1
  sta dirty
@@ -456,16 +445,10 @@ do_move
 
 do_fire
  MX %00
+ lda sel_unit
  ldx cur_x
  ldy cur_y
- jsr eng_get_unit_at
- bcs :target
- lda #s_no_target_here
- jmp set_msg
-:target
- tax
- lda sel_unit
- jsr eng_turn_fire
+ jsr eng_turn_fire_at      ; the unit there, else the square
  bcs :fired
  jsr reason_fr
  jmp set_msg
@@ -535,8 +518,8 @@ k_cancel
  sta mode
  lda #$FF
  sta sel_unit
- lda #s_hint
- jmp set_msg
+ stz msg_ptr
+ jmp mark_dirty
 
 k_end_turn
  MX %00
@@ -722,129 +705,10 @@ draw_all
  beq :board
  jmp status_draw
 :board
- jsr draw_board
- jsr draw_units
+ jsr art_draw_board
  jsr draw_highlights
  jsr draw_cursor
  jsr draw_hud
- rts
-
-* draw_board - every cell in its terrain colour.
-draw_board
- MX %00
- stz cy
-:row
- stz cx
-:col
- lda cy
- asl
- asl
- sta tmp
- asl
- asl
- clc
- adc tmp                   ; cy*20
- clc
- adc cx
- tax
- lda board,x
- and #$00FF
- tax
- lda terrain_colour,x
- jsr set_fill_colour
- jsr cell_addr
- lda #CELL_WB
- sta fr_w
- lda #CELL_H
- sta fr_h
- jsr fill_rect
- inc cx
- lda cx
- cmp #BOARD_W
- bcc :col
- inc cy
- lda cy
- cmp #BOARD_H
- bcc :row
- rts
-
-* draw_units - a box and a class letter for every living unit.
-draw_units
- MX %00
- stz uid
-:next
- ldx uid
- lda unit_flags,x
- and #$0080
- bne :paint
- jmp :skip
-:paint
- lda unit_x,x
- and #$00FF
- sta cx
- lda unit_y,x
- and #$00FF
- sta cy
- lda unit_side,x
- and #$00FF
- sta side_tmp
- tax
- lda side_box,x
- jsr set_fill_colour
- jsr cell_addr
- lda fr_addr
- clc
- adc #SCREEN_ROW+1
- sta fr_addr
- lda #CELL_WB-2
- sta fr_w
- lda #CELL_H-2
- sta fr_h
- jsr fill_rect
- ldx uid
- lda unit_class,x
- and #$00FF
- tax
- lda class_letter,x
- and #$00FF
- sta glyph_buf
- stz glyph_buf+1
- ldx side_tmp
- lda side_box,x
- and #$00FF
- pha
- lda side_letter,x
- and #$00FF
- plx
- jsr set_colors
- lda #glyph_buf
- sta str_ptr
- lda cx
- asl
- asl
- asl
- asl
- clc
- adc #5
- tax
- lda cy
- asl
- asl
- asl
- asl
- sec
- sbc cy
- clc
- adc #11
- tay
- jsr draw_cstr
-:skip
- inc uid
- lda uid
- cmp #MAX_UNITS
- bcs :done
- jmp :next
-:done
  rts
 
 * draw_highlights - with a unit selected: legal destinations
@@ -927,44 +791,70 @@ hl_moves
 :done
  rts
 
-* hl_targets - outline every enemy fire_validate accepts; if
-* the cursor is on one, dot the squares between.
+* hl_targets - walk the eight rays from the selected unit and
+* outline every square fire_validate_at accepts, an enemy
+* unit or a square that can be destroyed; the line of fire
+* is dotted to the target under the cursor.
 hl_targets
  MX %00
- stz uid
-:next
- ldx uid
- lda unit_flags,x
- and #$0080
- bne :test
- jmp :skip
-:test
- lda sel_unit
- jsr eng_fire_validate
- bcc :skip
- ldx uid
+ stz dir
+:dir
+ ldx sel_unit
  lda unit_x,x
  and #$00FF
- sta cx
+ sta hx
  lda unit_y,x
  and #$00FF
+ sta hy
+:step
+ ldx dir
+ lda dir_dx,x
+ and #$00FF
+ jsr sign_extend
+ clc
+ adc hx
+ sta hx
+ lda dir_dy,x
+ and #$00FF
+ jsr sign_extend
+ clc
+ adc hy
+ sta hy
+ lda hx
+ cmp #BOARD_W
+ bcs :off
+ lda hy
+ cmp #BOARD_H
+ bcs :off
+ lda sel_unit
+ ldx hx
+ ldy hy
+ jsr eng_fire_validate_at
+ bcc :no
+ lda hx
+ sta cx
+ lda hy
  sta cy
  lda #COL_CYAN
  jsr draw_box1
- lda cx
- cmp cur_x
- bne :skip
- lda cy
- cmp cur_y
- bne :skip
- jsr draw_fire_line
-:skip
- inc uid
- lda uid
- cmp #MAX_UNITS
+:no
+ jmp :step
+:off
+ inc dir
+ lda dir
+ cmp #NUM_DIRS
  bcs :done
- jmp :next
+ jmp :dir
 :done
+* the line of fire to the cursor's square, if that is a
+* target (draw_fire_line walks with hx, hy and dir itself)
+ lda sel_unit
+ ldx cur_x
+ ldy cur_y
+ jsr eng_fire_validate_at
+ bcc :none
+ jmp draw_fire_line
+:none
  rts
 
 * draw_fire_line - after a successful fire_validate, ln_*
@@ -1156,9 +1046,7 @@ cell_addr
  asl
  asl
  asl
- asl
- sec
- sbc cy                    ; cy*15 rows
+ asl                       ; cy*16 rows
  jsr rows_to_offset
  clc
  adc #SCREEN
@@ -1216,7 +1104,7 @@ fill_rect
  rts
 
 *----------------------------------------------------------
-* HUD: three text lines under the board.
+* HUD: two text lines under the board.
 *----------------------------------------------------------
 * HUD_ADDR - screen offset of the first HUD row. Merlin has
 * no operator precedence: this evaluates left to right.
@@ -1234,8 +1122,7 @@ draw_hud
  jsr set_fill_colour
  jsr fill_rect
  jsr draw_hud1
- jsr draw_hud2
- jmp draw_hud3
+ jmp draw_hud2
 
 * draw_hud1 - "RED TO MOVE  09:58  MOVES 1/3  FIRE OR MOVE",
 * or the pause, or the result.
@@ -1243,11 +1130,11 @@ draw_hud1
  MX %00
  lda hud1_y
  sec
- sbc #10
+ sbc #9
  jsr rows_to_offset
  clc
  adc #SCREEN
- sta fr_addr               ; the strip from 10 above the baseline
+ sta fr_addr               ; the strip from 9 above the baseline
  lda #SCREEN_ROW
  sta fr_w
  lda #11
@@ -1331,11 +1218,23 @@ draw_hud1
 side_hud_colour dfb COL_RED,COL_YELLOW
 phase_names da s_ph_any,s_ph_fire,s_ph_move
 
-* draw_hud2 - the selected unit (else the one under the
-* cursor): "TANK  SQ=12 GM=24 AM=16 FL=240", plus the fuel
+* draw_hud2 - the last message if one is waiting (shown until
+* the next redraw), else the selected unit (or the one under
+* the cursor): "TANK  SQ=12 GM=24 AM=16 FL=240", plus the fuel
 * after the move the cursor proposes (spec 25.1).
 draw_hud2
  MX %00
+ lda msg_ptr
+ beq :unit
+ sta str_ptr
+ stz msg_ptr
+ lda #COL_LTGREY
+ ldx #COL_BLACK
+ jsr set_colors
+ ldx #2
+ ldy #HUD2_Y
+ jmp draw_cstr
+:unit
  lda sel_unit
  cmp #$FF
  bne :have
@@ -1407,19 +1306,7 @@ draw_hud2
  ldx #COL_BLACK
  jsr set_colors
  ldx #2
- ldy #HUD_Y+21
- jmp draw_cstr
-
-* draw_hud3 - the message line.
-draw_hud3
- MX %00
- lda #COL_LTGREY
- ldx #COL_BLACK
- jsr set_colors
- lda msg_ptr
- sta str_ptr
- ldx #2
- ldy #HUD_Y+32
+ ldy #HUD2_Y
  jmp draw_cstr
 
 *----------------------------------------------------------
@@ -1461,6 +1348,26 @@ eng_fire_validate
  sep #$30
  MX %11
  jsr fire_validate
+ rep #$30
+ MX %00
+ and #$00FF
+ rts
+
+eng_fire_validate_at
+ MX %00
+ sep #$30
+ MX %11
+ jsr fire_validate_at
+ rep #$30
+ MX %00
+ and #$00FF
+ rts
+
+eng_turn_fire_at
+ MX %00
+ sep #$30
+ MX %11
+ jsr turn_fire_at
  rep #$30
  MX %00
  and #$00FF
@@ -1553,7 +1460,6 @@ s_tank          asc 'TANK'
                 dfb 0
 s_car           asc 'CAR'
                 dfb 0
-s_hint          asc 'RETURN SELECT  E END  TAB STATUS  1-0 BOARD'
                 dfb 0
 s_board_tag     asc 'B'
                 dfb 0
@@ -1568,8 +1474,6 @@ s_fire_hint     asc 'FIRE: RETURN ON A TARGET  M MOVE  ESC'
 s_no_unit_here  asc 'NO UNIT THERE'
                 dfb 0
 s_not_yours     asc 'NOT YOUR UNIT'
-                dfb 0
-s_no_target_here asc 'NO TARGET THERE'
                 dfb 0
 s_moved         asc 'MOVED'
                 dfb 0
@@ -1591,7 +1495,7 @@ s_r_blocked     asc 'BLOCKED'
                 dfb 0
 s_r_no_fuel     asc 'NOT ENOUGH FUEL'
                 dfb 0
-s_r_no_target   asc 'NOT AN ENEMY UNIT'
+s_r_no_target   asc 'NOTHING TO SHOOT THERE'
                 dfb 0
 s_r_range       asc 'OUT OF RANGE'
                 dfb 0
@@ -1683,7 +1587,7 @@ quit       ds 2
 over_shown ds 2
 shown_side ds 2
 last_sec   ds 2
-hud1_y     ds 2            ; baseline of the clock line (board: HUD_Y+10)
+hud1_y     ds 2            ; baseline of the clock line (board: HUD1_Y)
 msg_ptr    ds 2
 key_code   ds 2
 key_vec    ds 2

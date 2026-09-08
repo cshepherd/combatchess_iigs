@@ -10,7 +10,9 @@
 * show the hit chance (Enhanced mode) and say why a shot is
 * refused. fire_execute validates, spends the ammunition,
 * rolls, applies the hit or hands a miss to miss_resolve,
-* and queues the events. Neither knows about turns: whose
+* and queues the events. fire_validate_at / fire_execute_at
+* take a square instead: the enemy unit on it, else the
+* square itself if it can be destroyed. Neither knows about turns: whose
 * turn it is and the Shoot Option phase (spec 14) are the
 * turn code's checks before it calls fire_execute. Victory
 * (spec 17.1) is the game layer's check afterwards, using
@@ -22,12 +24,13 @@
 *----------------------------------------------------------
 FR_OK           = 0
 FR_NO_UNIT      = 1   ; no living attacker with that id
-FR_NO_TARGET    = 2   ; target is not a living enemy unit
+FR_NO_TARGET    = 2   ; target is not a living enemy unit, or not a square that can be destroyed
 FR_NOT_LINE     = 3   ; not on the attacker's row, column or diagonal
 FR_OUT_OF_RANGE = 4   ; beyond the class's range in that orientation
 FR_BLOCKED      = 5   ; terrain, or a unit while the rule says so, in the way
 FR_NO_AMMO      = 6
 FR_ALREADY      = 7   ; already fired at that target this turn (spec 13)
+FR_SQUARE       = $FF ; fr_target of a shot at a square rather than a unit
 
 * fr_outcome after a successful fire_execute
 FR_MISS = 0
@@ -70,6 +73,96 @@ fire_validate
  sta ln_x1
  lda unit_y,x
  sta ln_y1
+ jsr fire_check_line
+ bcc :fail
+ lda fr_attacker
+ ldx fr_target
+ jsr unit_has_fired_at
+ bcs :already
+ lda #FR_OK
+ sec
+ rts
+:no_unit
+ lda #FR_NO_UNIT
+ clc
+ rts
+:no_target
+ lda #FR_NO_TARGET
+ clc
+ rts
+:already
+ lda #FR_ALREADY
+:fail
+ clc
+ rts
+
+*----------------------------------------------------------
+* fire_validate_at - Check a shot at square (X, Y): at the
+* enemy unit standing there, else at the square itself when
+* it can be destroyed (trees, bridges, board 9's grey). The
+* original lets a unit shoot such squares. UNVERIFIED
+* whether its odds differ from a shot at a unit: the same
+* hit table applies here, and one hit destroys an empty
+* square, which carries no hit points (spec 23 gives them
+* only under a unit).
+* In:  A = attacker id, X = x, Y = y (on the board)
+* Out: as fire_validate. fr_target = the unit's id, or
+*      FR_SQUARE with fr_tx/fr_ty the square.
+* Clobbers X, Y, rt0-rt3, fr_*, ln_*.
+*----------------------------------------------------------
+fire_validate_at
+ MX %11
+ sta fr_attacker
+ stx fr_tx
+ sty fr_ty
+ jsr get_unit_at
+ bcc :square
+ tax
+ lda fr_attacker
+ jmp fire_validate
+:square
+ lda #FR_SQUARE
+ sta fr_target
+ lda fr_attacker
+ cmp #MAX_UNITS
+ bcs :no_unit
+ tax
+ lda unit_flags,x
+ bpl :no_unit
+ lda unit_x,x
+ sta ln_x0
+ lda unit_y,x
+ sta ln_y0
+ ldx fr_tx
+ stx ln_x1
+ ldy fr_ty
+ sty ln_y1
+ jsr get_cell
+ jsr cell_flags
+ and #TF_DESTRUCT
+ beq :no_target
+ jsr fire_check_line
+ bcc :fail
+ lda #FR_OK
+ sec
+ rts
+:no_unit
+ lda #FR_NO_UNIT
+ clc
+ rts
+:no_target
+ lda #FR_NO_TARGET
+:fail
+ clc
+ rts
+
+* fire_check_line - The checks both validates share once
+* ln_x0..ln_y1 hold the endpoints and fr_attacker the
+* shooter: a line, the range (fr_chance), line of sight and
+* ammunition; sets fr_damage.
+* Out: carry set: fine. Carry clear, A = the FR_* reason.
+fire_check_line
+ MX %11
  jsr line_find
  bcc :not_line
  ldx fr_attacker
@@ -85,24 +178,10 @@ fire_validate
  ldx fr_attacker
  lda unit_ammo,x
  beq :no_ammo
- lda fr_attacker
- ldx fr_target
- jsr unit_has_fired_at
- bcs :already
- ldx fr_attacker
  ldy unit_class,x
  lda class_damage,y
  sta fr_damage
- lda #FR_OK
  sec
- rts
-:no_unit
- lda #FR_NO_UNIT
- clc
- rts
-:no_target
- lda #FR_NO_TARGET
- clc
  rts
 :not_line
  lda #FR_NOT_LINE
@@ -118,10 +197,6 @@ fire_validate
  rts
 :no_ammo
  lda #FR_NO_AMMO
- clc
- rts
-:already
- lda #FR_ALREADY
  clc
  rts
 
@@ -183,9 +258,77 @@ fire_execute
 :done
  rts
 
+*----------------------------------------------------------
+* fire_execute_at - Validate and take a shot at square (X,
+* Y): at the unit there through fire_execute, else at the
+* square: a round spent, the roll, and on a hit the square
+* destroyed (EV_TERRAIN_DESTROYED after EV_SHOT_HIT); a miss
+* goes to miss_resolve. The shot events of a square shot
+* carry FR_SQUARE as the target and the square in p3, p4.
+* In and out as fire_validate_at; fr_outcome = FR_MISS or
+* FR_HIT. Clobbers X, Y, rt0-rt3, fr_*, ln_*, ev_*.
+*----------------------------------------------------------
+fire_execute_at
+ MX %11
+ jsr fire_validate_at
+ bcc :done
+ lda fr_target
+ cmp #FR_SQUARE
+ beq :square
+ tax
+ lda fr_attacker
+ jmp fire_execute
+:square
+ ldx fr_attacker
+ dec unit_ammo,x
+ inc unit_shots,x
+ lda #EV_SHOT_FIRED
+ jsr fr_event
+ lda fr_chance
+ jsr resolve_hit
+ sta fr_roll
+ bcc :miss
+ lda #EV_SHOT_HIT
+ jsr fr_event
+ lda fr_roll
+ sta ev_p2
+ jsr event_push
+ ldx fr_tx
+ ldy fr_ty
+ jsr get_cell
+ sta fr_terr_type
+ jsr destroy_cell          ; validated destructible
+ sta ev_p3                 ; the new type
+ lda #EV_TERRAIN_DESTROYED
+ sta ev_type
+ stx ev_p0
+ sty ev_p1
+ lda fr_terr_type
+ sta ev_p2
+ stz ev_p4
+ jsr event_push
+ lda #FR_HIT
+ sta fr_outcome
+ lda #FR_OK
+ sec
+ rts
+:miss
+ lda #EV_SHOT_MISSED
+ jsr fr_event
+ lda fr_roll
+ sta ev_p2
+ jsr event_push
+ jsr miss_resolve
+ stz fr_outcome            ; FR_MISS
+ lda #FR_OK
+ sec
+:done
+ rts
+
 * fr_event - Fill ev_type = A, ev_p0 = attacker, ev_p1 =
-* target, the rest zero. EV_SHOT_FIRED is pushed here; the
-* others add a parameter first.
+* target, the rest zero, except that a square shot puts its
+* square in p3, p4. EV_SHOT_FIRED is pushed here; the others
+* add a parameter first.
 fr_event
  MX %11
  sta ev_type
@@ -196,6 +339,14 @@ fr_event
  stz ev_p2
  stz ev_p3
  stz ev_p4
+ lda fr_target
+ cmp #FR_SQUARE
+ bne :unit
+ lda fr_tx
+ sta ev_p3
+ lda fr_ty
+ sta ev_p4
+:unit
  lda ev_type
  cmp #EV_SHOT_FIRED
  bne :later
@@ -332,3 +483,5 @@ fr_victim    ds 1
 fr_dmg_tmp   ds 1
 fr_terr_old  ds 1
 fr_terr_type ds 1
+fr_tx        ds 1          ; the square of a square shot
+fr_ty        ds 1

@@ -211,6 +211,70 @@ turn_fire
  ldx tn_target
  jsr fire_execute
  bcc :refused
+ jmp tn_fire_after
+:refused
+ clc
+ rts
+:over
+ lda #TN_GAME_OVER
+ clc
+ rts
+:not_yours
+ lda #TN_NOT_YOURS
+ clc
+ rts
+:no_phase
+ lda #TN_NO_FIRE_PHASE
+ clc
+ rts
+
+* turn_fire_at - The same shot aimed at a square: the enemy
+* unit standing there, else the square itself if it can be
+* destroyed (fire_execute_at).
+* In:  A = attacker id, X = x, Y = y. Out: as turn_fire.
+turn_fire_at
+ MX %11
+ sta tn_unit
+ stx tn_tx
+ sty tn_ty
+ lda game_result
+ bne :over
+ ldx tn_unit
+ cpx #MAX_UNITS
+ bcs :try
+ lda unit_side,x
+ cmp active_side
+ bne :not_yours
+:try
+ lda turn_phase
+ cmp #PHASE_MOVE
+ beq :no_phase
+ lda tn_unit
+ ldx tn_tx
+ ldy tn_ty
+ jsr fire_execute_at
+ bcc :refused
+ jmp tn_fire_after
+:refused
+ clc
+ rts
+:over
+ lda #TN_GAME_OVER
+ clc
+ rts
+:not_yours
+ lda #TN_NOT_YOURS
+ clc
+ rts
+:no_phase
+ lda #TN_NO_FIRE_PHASE
+ clc
+ rts
+
+* tn_fire_after - A shot went off: count it, and a destroyed
+* enemy Battle Cruiser ends the game (spec 17.1).
+tn_fire_after
+ MX %11
  inc turn_shots
  lda fr_outcome
  cmp #FR_KILL
@@ -226,21 +290,6 @@ turn_fire
 :ok
  lda #TN_OK
  sec
- rts
-:refused
- clc
- rts
-:over
- lda #TN_GAME_OVER
- clc
- rts
-:not_yours
- lda #TN_NOT_YOURS
- clc
- rts
-:no_phase
- lda #TN_NO_FIRE_PHASE
- clc
  rts
 
 *----------------------------------------------------------
@@ -638,3 +687,5 @@ tn_unit         ds 1
 tn_x            ds 1
 tn_y            ds 1
 tn_target       ds 1
+tn_tx           ds 1
+tn_ty           ds 1

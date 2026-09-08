@@ -33,14 +33,14 @@
   rep $30
   MX %00
   jsr shr_init
-  jsr dbg_init
 
   sep $30
   MX %11
-  jsr setup_game
+  jsr setup_game            ; the board first: dbg_init reads it
 
   rep $30
   MX %00
+  jsr dbg_init
   jsr dbg_run
 
   sec
@@ -162,5 +162,7 @@ setup_game
   put dbg
   put status
   put status_art
+ put art
+ put board_art
 
   put common
