@@ -110,6 +110,22 @@
   sta sec_name+1
   jsr section_end
 
+  jsr section_begin
+  jsr test_board
+  lda #<s_sec_board
+  sta sec_name
+  lda #>s_sec_board
+  sta sec_name+1
+  jsr section_end
+
+  jsr section_begin
+  jsr test_terrain
+  lda #<s_sec_terrain
+  sta sec_name
+  lda #>s_sec_terrain
+  sta sec_name+1
+  jsr section_end
+
 * Grand total: a "section" that started from zero.
   stz sec_pass
   stz sec_pass+1
@@ -182,7 +198,7 @@ test_class_tables
  ldy #0
 :cls
  lda (rptr2),y
- sta rt1                   ; expected
+ sta expect                   ; expected
  lda (rptr),y              ; actual
  phx
  phy
@@ -237,7 +253,7 @@ test_fuel_table
  cmp #$FF
  beq :done
  lda fuel_cases+3,x
- sta rt1                   ; expected cost
+ sta expect                   ; expected cost
  lda fuel_cases+1,x
  sta rt2                   ; orientation
  lda fuel_cases+2,x
@@ -252,7 +268,7 @@ test_fuel_table
  lda #0
  rol                       ; A = carry from fuel_cost
  ldy #1
- sty rt1
+ sty expect
  jsr check_eq              ; and it was reported legal
  plx
  inx
@@ -325,7 +341,7 @@ test_hit_table
  cmp #$FF
  beq :done
  lda hit_cases+2,x
- sta rt1                   ; expected percent
+ sta expect                   ; expected percent
  lda hit_cases+1,x
  tay                       ; range
  lda hit_cases,x
@@ -339,7 +355,7 @@ test_hit_table
  lda #0
  rol                       ; A = carry from hit_chance
  ldy #1
- sty rt1
+ sty expect
  jsr check_eq              ; and it was reported in range
  plx
  inx
@@ -436,7 +452,7 @@ sweep_bounds
 :legal
  lda #1
 :expect
- sta rt1
+ sta expect
  lda t_legal
  jsr check_eq              ; carry agrees with the range table
  lda t_cost
@@ -479,7 +495,7 @@ test_rng
  ldx #0
 :state1
  lda kat_state1,x
- sta rt1
+ sta expect
  lda rng_state,x
  jsr check_eq
  inx
@@ -490,7 +506,7 @@ test_rng
  ldx #0
 :state3
  lda kat_state3,x
- sta rt1
+ sta expect
  lda rng_state,x
  jsr check_eq
  inx
@@ -510,17 +526,16 @@ test_rng
  lda #1
 :zero
  ldx #1
- stx rt1
+ stx expect
  jsr check_eq
-* First eight rolls. Draw before loading rt1: the generator
-* clobbers rt0-rt3.
+* First eight rolls.
  jsr seed_test_rng
  ldx #0
 :roll
  jsr rng_roll100
  sta t_cost
  lda kat_rolls,x
- sta rt1
+ sta expect
  lda t_cost
  jsr check_eq
  inx
@@ -574,11 +589,11 @@ test_resolve
  sta t_legal               ; 1 = hit
  plx
  lda rh_cases+2,x
- sta rt1
+ sta expect
  lda t_legal
  jsr check_eq              ; hit or miss as expected
  lda rh_cases+1,x
- sta rt1
+ sta expect
  lda t_cost
  jsr check_eq              ; the injected roll came back
  inx
@@ -596,13 +611,13 @@ test_resolve
  lda #0
  rol
  ldx #1
- stx rt1
+ stx expect
  jsr check_eq              ; 100% always hits
  lda #0
  jsr resolve_hit
  lda #0
  rol
- stz rt1
+ stz expect
  jsr check_eq              ; 0% never hits
  jsr seed_test_rng
  stz t_cost                ; hit counter
@@ -616,7 +631,7 @@ test_resolve
  dex
  bne :trial
  lda #138                  ; from rng_ref.py --trials 255 --percent 50
- sta rt1
+ sta expect
  lda t_cost
  jsr check_eq
  rts
@@ -625,6 +640,332 @@ stub_roll
  lda stub_value
  rts
 stub_value ds 1
+
+*----------------------------------------------------------
+* Section 8 - board geometry and cells: cell_index at the
+* corners and an interior square (5), fill then set one cell
+* leaves its neighbours alone (7), cell_in_bounds on and off
+* the edges (6), cell_step in all eight directions from
+* (5,5) and off three edges (27), board_load copies a full
+* pattern (3). 48 checks.
+*----------------------------------------------------------
+test_board
+ MX %11
+* cell_index
+ ldx #0                    ; 3 bytes per case
+:idx
+ lda idx_cases+2,x
+ sta expect
+ phx
+ ldy idx_cases+1,x
+ lda idx_cases,x
+ tax
+ jsr cell_index
+ plx
+ jsr check_eq
+ inx
+ inx
+ inx
+ cpx #15
+ bne :idx
+* fill, set one cell, count and look around it
+ lda #TERR_CLEAR
+ jsr board_fill
+ lda #TERR_TREE
+ ldx #3
+ ldy #2
+ jsr set_cell
+ lda #TERR_TREE
+ jsr count_type
+ ldx #1
+ stx expect
+ jsr check_eq              ; exactly one tree
+ lda #TERR_CLEAR
+ jsr count_type
+ ldx #219
+ stx expect
+ jsr check_eq              ; everything else clear
+ ldx #3
+ ldy #2
+ jsr get_cell
+ ldx #TERR_TREE
+ stx expect
+ jsr check_eq              ; the tree is where it was put
+ ldx #TERR_CLEAR
+ stx expect
+ ldx #2
+ ldy #2
+ jsr get_cell
+ jsr check_eq              ; west neighbour
+ ldx #4
+ ldy #2
+ jsr get_cell
+ jsr check_eq              ; east
+ ldx #3
+ ldy #1
+ jsr get_cell
+ jsr check_eq              ; north
+ ldx #3
+ ldy #3
+ jsr get_cell
+ jsr check_eq              ; south
+* cell_in_bounds
+ ldx #0                    ; 3 bytes per case
+:inb
+ lda inb_cases+2,x
+ sta expect
+ phx
+ ldy inb_cases+1,x
+ lda inb_cases,x
+ tax
+ jsr cell_in_bounds
+ lda #0
+ rol
+ plx
+ jsr check_eq
+ inx
+ inx
+ inx
+ cpx #18
+ bne :inb
+* cell_step from (5,5) in every direction
+ ldx #0
+:step
+ stx t_class               ; direction
+ txa
+ asl
+ sta t_orient              ; case offset, 2 bytes per direction
+ lda t_class
+ ldx #5
+ ldy #5
+ jsr cell_step
+ stx t_cost                ; new x
+ sty t_dist                ; new y
+ lda #0
+ rol
+ sta t_legal               ; 1 = still on the board
+ ldx t_orient
+ lda step_cases,x
+ sta expect
+ lda t_cost
+ jsr check_eq
+ lda step_cases+1,x
+ sta expect
+ lda t_dist
+ jsr check_eq
+ lda #1
+ sta expect
+ lda t_legal
+ jsr check_eq
+ ldx t_class
+ inx
+ cpx #NUM_DIRS
+ bne :step
+* and off the edges
+ stz expect
+ lda #DIR_NW
+ ldx #0
+ ldy #0
+ jsr cell_step
+ lda #0
+ rol
+ jsr check_eq              ; off the top-left corner
+ lda #DIR_SE
+ ldx #19
+ ldy #10
+ jsr cell_step
+ lda #0
+ rol
+ jsr check_eq              ; off the bottom-right corner
+ lda #DIR_W
+ ldx #0
+ ldy #5
+ jsr cell_step
+ lda #0
+ rol
+ jsr check_eq              ; off the left edge
+* board_load: pattern cell i = i AND 7
+ ldx #0
+ lda #0
+:mk
+ sta test_src,x
+ inc
+ and #7
+ inx
+ cpx #BOARD_CELLS
+ bne :mk
+ lda #<test_src
+ sta rptr
+ lda #>test_src
+ sta rptr+1
+ jsr board_load
+ stz t_cost
+ ldx #0
+:cmp
+ lda board,x
+ cmp test_src,x
+ beq :same
+ inc t_cost
+:same
+ inx
+ cpx #BOARD_CELLS
+ bne :cmp
+ stz expect
+ lda t_cost
+ jsr check_eq              ; no cell differs
+ ldx #19
+ ldy #10
+ jsr get_cell
+ ldx #3                    ; 219 AND 7
+ stx expect
+ jsr check_eq
+ ldx #0
+ ldy #1
+ jsr get_cell
+ ldx #4                    ; 20 AND 7
+ stx expect
+ jsr check_eq
+ rts
+
+* count_type - A = terrain type -> A = how many cells hold
+* it. Clobbers X, rt2, rt3.
+count_type
+ MX %11
+ sta rt2
+ stz rt3
+ ldx #0
+:loop
+ lda board,x
+ cmp rt2
+ bne :next
+ inc rt3
+:next
+ inx
+ cpx #BOARD_CELLS
+ bne :loop
+ lda rt3
+ rts
+
+* x, y, expected index
+idx_cases
+ dfb 0,0,0
+ dfb 19,0,19
+ dfb 0,10,200
+ dfb 19,10,219
+ dfb 7,4,87
+
+* x, y, expected on-board flag
+inb_cases
+ dfb 0,0,1
+ dfb 19,10,1
+ dfb 20,0,0
+ dfb 0,11,0
+ dfb $FF,0,0
+ dfb 0,$FF,0
+
+* expected (x, y) after one step from (5,5), in DIR_* order
+step_cases
+ dfb 5,4
+ dfb 6,4
+ dfb 6,5
+ dfb 6,6
+ dfb 5,6
+ dfb 4,6
+ dfb 4,5
+ dfb 4,4
+
+test_src ds BOARD_CELLS
+
+*----------------------------------------------------------
+* Section 9 - terrain: every type's flags and after-
+* destruction type match spec 18-21 (20), destroy_cell on
+* each kind of cell changes exactly what it should and
+* reports it (12), and touches no other cell (1). 33 checks.
+*----------------------------------------------------------
+test_terrain
+ MX %11
+ ldx #0                    ; 3 bytes per case
+:type
+ lda terr_cases+1,x
+ sta expect
+ lda terr_cases,x
+ jsr cell_flags
+ jsr check_eq              ; flags
+ lda terr_cases+2,x
+ sta expect
+ phx
+ lda terr_cases,x
+ tax
+ lda terrain_after,x
+ plx
+ jsr check_eq              ; what it becomes
+ inx
+ inx
+ inx
+ cpx #30
+ bne :type
+* destroy_cell at (1,1) on an otherwise clear board
+ lda #TERR_CLEAR
+ jsr board_fill
+ ldx #0                    ; 3 bytes per case
+:des
+ lda des_cases,x
+ phx
+ ldx #1
+ ldy #1
+ jsr set_cell
+ jsr destroy_cell
+ lda #0
+ rol
+ sta t_legal               ; 1 = reported destroyed
+ ldx #1
+ ldy #1
+ jsr get_cell
+ sta t_cost                ; type afterwards
+ plx
+ lda des_cases+1,x
+ sta expect
+ lda t_legal
+ jsr check_eq
+ lda des_cases+2,x
+ sta expect
+ lda t_cost
+ jsr check_eq
+ inx
+ inx
+ inx
+ cpx #18
+ bne :des
+ lda #TERR_CLEAR
+ jsr count_type
+ ldx #220
+ stx expect
+ jsr check_eq              ; the board is all clear again
+ rts
+
+* type, expected flags, expected type after destruction
+* (spec 19-20 in prose; the values here are composed from
+* that prose, not copied from terrain_flags)
+terr_cases
+ dfb TERR_CLEAR,TF_MOVE+TF_FIRE,TERR_CLEAR
+ dfb TERR_TREE,TF_MOVE+TF_DESTRUCT+TF_SLOW,TERR_CLEAR
+ dfb TERR_WATER,TF_FIRE,TERR_WATER
+ dfb TERR_BRIDGE,TF_MOVE+TF_FIRE+TF_DESTRUCT,TERR_WATER
+ dfb TERR_MOUNTAIN,0,TERR_MOUNTAIN
+ dfb TERR_WHITE,TF_MOVE+TF_FIRE,TERR_WHITE
+ dfb TERR_YELLOW,TF_MOVE+TF_FIRE,TERR_YELLOW
+ dfb TERR_GREY,TF_DESTRUCT,TERR_WHITE
+ dfb TERR_PURPLE,TF_FIRE,TERR_PURPLE
+ dfb TERR_BLACK,0,TERR_BLACK
+
+* type placed, expected destroyed flag, expected type after
+des_cases
+ dfb TERR_TREE,1,TERR_CLEAR
+ dfb TERR_BRIDGE,1,TERR_WATER
+ dfb TERR_GREY,1,TERR_WHITE
+ dfb TERR_MOUNTAIN,0,TERR_MOUNTAIN
+ dfb TERR_WATER,0,TERR_WATER
+ dfb TERR_CLEAR,0,TERR_CLEAR
 
 * percent, injected roll, expected (1 hit / 0 miss)
 rh_cases
@@ -650,9 +991,9 @@ t_max      ds 1
 t_illegal  ds 1
 
 *----------------------------------------------------------
-* check_eq - One check: A must equal rt1. Numbers the check,
+* check_eq - One check: A must equal expect. Numbers the check,
 * tallies it, and remembers the first failing id.
-* 8-bit A/X/Y. Preserves X, Y and rt1.
+* 8-bit A/X/Y. Preserves X, Y and expect.
 *----------------------------------------------------------
 check_eq
  MX %11
@@ -660,7 +1001,7 @@ check_eq
  bne :id_ok
  inc test_id+1
 :id_ok
- cmp rt1
+ cmp expect
  bne :fail
  inc test_pass
  bne :done
@@ -685,6 +1026,7 @@ test_pass       ds 2
 test_fail       ds 2
 test_id         ds 2
 test_first_fail ds 2
+expect          ds 1     ; expected value for check_eq; engine code never touches it
 
 *----------------------------------------------------------
 * section_begin / section_end - Snapshot the tallies, then
@@ -782,6 +1124,10 @@ s_sec_rng    asc 'RANDOM GENERATOR'
              dfb 0
 s_sec_resolve asc 'RESOLVE HIT'
              dfb 0
+s_sec_board  asc 'BOARD CELLS'
+             dfb 0
+s_sec_terrain asc 'TERRAIN'
+             dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0
 s_first_fail asc 'FIRST FAILING CHECK ID'
@@ -790,5 +1136,6 @@ s_return     asc 'PRESS ANY KEY TO RETURN TO TITLE'
              dfb 0
 
   put tables
+  put board
   put rng
   put common

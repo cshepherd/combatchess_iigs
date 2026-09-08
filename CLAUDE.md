@@ -28,6 +28,8 @@ python3 tools/kegs_screenshot.py tests --port 6520 --listing src/test_Output.txt
 
 Checks are numbered from 1 in run order; `test_first_fail` holds the id of the first failure, traceable by counting through the sections in test.s. Every new rules routine gets a section here before it is used by GAME.
 
+A check is `sta expect` then `jsr check_eq` with the actual value in A. `expect` is the test's own variable, never engine scratch: two earlier failures came from holding the expected value in `rt1` across an engine call that clobbered it.
+
 ## Program structure
 
 `CC.SYSTEM` (`src/cc.s`) is the only `.SYSTEM` file on the volume. ProDOS loads it at $2000; it relocates one page to $1000 and stays resident. Parts chain by jumping to its table in emulation mode with 8-bit M/X:
@@ -44,13 +46,14 @@ Every part is a SYS file with `ORG $2000` that does `put shared` at the top (equ
 
 ## Rules engine
 
-Lives in `src/tables.s`, `src/rng.s` and the includes that will follow them (movement, fire, turns), included by GAME and TEST in that order. Conventions:
+Lives in `src/tables.s`, `src/board.s`, `src/rng.s` and the includes that will follow them (movement, fire, turns), included by GAME and TEST in that order. Conventions:
 
 - Routines are entered in native mode with 8-bit A/X/Y (`MX %11`), DBR $00, D $0000, and say so if they differ.
 - Scratch is the direct-page range `rt0`-`rt3`, `rptr`, `rptr2` ($E0-$E7) from shared.s, live only within one routine.
 - All class-dependent numbers are tables indexed by `CLASS_*`; never branch on class in logic code.
 - Fuel costs come only from `fuel_cost` (class, orientation, distance); `FUEL_NONE` ($FF) marks an illegal distance and can never be afforded.
 - Hit percentages come only from `hit_chance` (class, orientation, range), which returns 0 with carry clear beyond the class's firing range. The table itself depends on orientation and range only.
+- The board is 220 one-byte terrain types at `board`, row-major, reached through `get_cell`/`set_cell` with X = x, Y = y. Terrain behaviour is the `terrain_flags` table (`TF_FIRE` bit 7, `TF_MOVE` bit 6, so `bit terrain_flags,x` then `bpl`/`bvc` tests them), destruction is a type change through `terrain_after`, and cells carry no hit points. Directions are `DIR_N`..`DIR_NW` clockwise, odd values diagonal. Tree penalties are tables of zeros marked UNVERIFIED until measured on the Atari executable.
 - Randomness comes only from `src/rng.s`: xorshift32 in the 4 bytes at `rng_state`, seeded through `rng_seed` (rt0-rt3, zero becomes a default). `resolve_hit` takes a percent, returns carry for hit and the roll in A, and draws through `roll_vec` so tests can inject rolls. `tools/rng_ref.py` is the byte-exact host mirror; the self-tests hold known answers from it, so any change to the generator must update both and will invalidate replays.
 - No rendering or sound from rules code (spec section 32); it will emit events for the display layer.
 - Every value is 8-bit; the largest in the spec is max fuel, 240.
