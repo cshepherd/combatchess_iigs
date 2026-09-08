@@ -64,4 +64,8 @@ s_body    asc 'MILESTONE 1 RULES ENGINE GOES HERE'
 s_return  asc 'PRESS ANY KEY TO RETURN TO TITLE'
           dfb 0
 
+* Rules engine (milestone 1). Data tables first; movement,
+* fire and turn logic will follow as further includes.
+  put tables
+
   put common

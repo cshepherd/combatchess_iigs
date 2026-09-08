@@ -19,12 +19,12 @@ CADIUS = tools/cadius_strict.sh
 
 # Parts: each src/NAME.s assembles to out/NAME. ProDOS filenames
 # and file types are assigned in the package step.
-PARTS = cc title game
+PARTS = cc title game test
 BINS  = $(addprefix out/,$(PARTS))
 
 # Sources included with PUT by more than one part. Listed as
 # prerequisites so editing them rebuilds every part.
-SHARED = src/shared.s src/common.s
+SHARED = src/shared.s src/common.s src/tables.s
 
 .PHONY: all package clean
 all: package
@@ -56,6 +56,10 @@ $(IMGFILE): res/PRODOS $(BINS)
 	cp out/game out/GAME\#FF2000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/GAME\#FF2000 --quiet
 	rm out/GAME\#FF2000
+	# Rules self-tests: T on the title screen, or 00/1004g in KEGS.
+	cp out/test out/TEST\#FF2000
+	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TEST\#FF2000 --quiet
+	rm out/TEST\#FF2000
 	$(CADIUS) CATALOG $(IMGFILE)
 
 clean:

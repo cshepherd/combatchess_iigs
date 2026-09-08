@@ -8,6 +8,7 @@
 * mode with 8-bit M/X to chain to another part.
 LAUNCH_TITLE = $1000
 LAUNCH_GAME  = $1002
+LAUNCH_TEST  = $1004
 
 * Cross-part globals in page $11. The launcher zeroes this
 * page once at boot; values written here survive chaining
@@ -25,3 +26,14 @@ QD_DP = $1D00
 
 * Toolbox dispatcher.
 TOOLBOX = $E10000
+
+* Rules-engine scratch in the direct page (D = $0000). Only
+* live inside one routine, never across a toolbox or MLI
+* call. ProDOS 8 and the toolbox leave this range alone;
+* ddiigs uses the same one.
+rt0   = $E0
+rt1   = $E1
+rt2   = $E2
+rt3   = $E3
+rptr  = $E4              ; 2-byte pointer
+rptr2 = $E6              ; 2-byte pointer

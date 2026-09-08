@@ -9,11 +9,14 @@
 *
 *   $1000  load TITLE   (also the boot / post-relocation entry)
 *   $1002  load GAME
+*   $1004  load TEST    (rules self-tests)
 *
 * Each entry is a 2-byte BRA into its loader stub. A part
-* that finishes JMPs (in emulation mode, 8-bit M/X) to one
-* of these to chain to the next part. Nothing else is left
-* resident between parts.
+* that finishes JMPs to one of these to chain to the next
+* part. Every stub switches to emulation mode itself, so
+* callers may arrive in any mode: a KEGS debugger session
+* can enter with "00/1004g" from wherever the machine is
+* parked. Nothing else is left resident between parts.
 *
 * Bank-$00 layout owned by the launcher:
 *   $0C00-$0FFF  ProDOS 8 I/O buffer (1 KB, page-aligned)
@@ -29,6 +32,7 @@
 * Public jump table.
 br_title     bra load_title            ; $1000
 br_game      bra load_game             ; $1002
+br_test      bra load_test             ; $1004
 
 *----------------------------------------------------------
 * load_title - Boot OR reload-TITLE entry.
@@ -43,6 +47,8 @@ br_game      bra load_game             ; $1002
 * can never masquerade as the current one.
 *----------------------------------------------------------
 load_title
+ sec
+ xce                       ; emulation mode, whatever the caller had
  per :here
 :here
  pla                       ; low byte of runtime address
@@ -76,8 +82,17 @@ load_title
  jmp load_and_run
 
 load_game
+ sec
+ xce
  ldx #>game_path
  lda #<game_path
+ jmp load_and_run
+
+load_test
+ sec
+ xce
+ ldx #>test_path
+ lda #<test_path
  jmp load_and_run
 
 *----------------------------------------------------------
@@ -151,6 +166,7 @@ mli_errcode  dfb 0
 *----------------------------------------------------------
 title_path    str 'TITLE'
 game_path     str 'GAME'
+test_path     str 'TEST'
 
 * The bootstrap copies exactly one page. Fail the build if
 * the launcher ever grows past $10FF.

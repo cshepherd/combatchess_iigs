@@ -38,6 +38,10 @@ toolbox_init
  jsl TOOLBOX               ; _MTStartUp (tick counter, RTC)
  bcs tb_fail
 
+ ldx #$020B
+ jsl TOOLBOX               ; _IMStartUp (Int2Dec for on-screen numbers)
+ bcs tb_fail
+
  pha                       ; result space
  pea $1000                 ; idTag: application
  ldx #$2003
@@ -156,19 +160,39 @@ draw_cstr
 str_ptr dw 0
 
 *----------------------------------------------------------
+* fmt_u16 - Format A (unsigned 16-bit) as decimal, right-
+* justified with leading spaces, into the X-byte buffer at
+* str_ptr (bank $00). Native, 16-bit M/X.
+*----------------------------------------------------------
+fmt_u16
+ MX %00
+ pha                       ; intValue
+ pea $0000                 ; strPtr, high word (bank $00)
+ lda str_ptr
+ pha                       ; strPtr, low word
+ phx                       ; strLength
+ pea $0000                 ; signedFlag: unsigned
+ ldx #$260B
+ jsl TOOLBOX               ; _Int2Dec
+ rts
+
+*----------------------------------------------------------
 * wait_key - Clear the keyboard strobe, block until a key is
-* pressed, clear it again. Native, 16-bit M/X in and out.
+* pressed, clear it again. Returns the key's ASCII code in
+* A (high bit stripped). Native, 16-bit M/X in and out.
 *----------------------------------------------------------
 wait_key
  MX %00
  sep $30
  MX %11
  sta $C010                 ; drop any key still latched
-:wait bit $C000
+:wait lda $C000
  bpl :wait
  sta $C010
+ and #$7F
  rep $30
  MX %00
+ and #$00FF
  rts
 
 *----------------------------------------------------------

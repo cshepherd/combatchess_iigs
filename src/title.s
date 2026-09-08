@@ -54,17 +54,29 @@
   jsr draw_cstr
 
   jsr wait_key
+  and #$00DF                ; fold to upper case
+  cmp #'T'
+  beq :run_tests
 
   sec
   xce
   MX %11
   jmp LAUNCH_GAME
 
+* T runs the rules self-tests (src/test.s). Development
+* hook; it can go once the rules are complete.
+:run_tests
+  MX %00
+  sec
+  xce
+  MX %11
+  jmp LAUNCH_TEST
+
 s_title    asc 'COMBAT CHESS'
            dfb 0
 s_subtitle asc 'APPLE IIGS PORT  -  SCAFFOLD BUILD'
            dfb 0
-s_pressany asc 'PRESS ANY KEY'
+s_pressany asc 'PRESS ANY KEY  (T: RULES SELF-TESTS)'
            dfb 0
 
   put common

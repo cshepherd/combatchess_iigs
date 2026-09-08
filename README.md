@@ -6,7 +6,9 @@ The rules specification lives in `combat_chess_iigs_spec-3.md`; the plan for har
 
 ## Status
 
-Scaffold. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. No game logic yet.
+Milestone 1 in progress. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. The rules data tables (unit classes, fuel costs) exist with self-tests; movement, fire and turn logic are next.
+
+Press T on the title screen to run the rules self-tests.
 
 ## Building
 
@@ -36,6 +38,8 @@ Boot `out/combatchess.po` in KEGS, GSplus, or on real hardware. The volume conta
 | `src/cc.s` | `CC.SYSTEM` launcher: relocates to $1000, chains TITLE and GAME |
 | `src/title.s` | Title screen part (will also own the options screen) |
 | `src/game.s` | Game part: rules engine and board display go here |
+| `src/test.s` | Rules self-tests part (spec section 33) |
+| `src/tables.s` | Rules data: unit class table, fuel cost table, range and cost lookups |
 | `src/shared.s` | Equates shared by every part (launcher entries, page $11 globals) |
 | `src/common.s` | Routines shared by every part (toolbox start-up, SHR init, text, keys) |
 | `res/` | `PRODOS` system file |
