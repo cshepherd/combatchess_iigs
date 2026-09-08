@@ -37,3 +37,7 @@ rt2   = $E2
 rt3   = $E3
 rptr  = $E4              ; 2-byte pointer
 rptr2 = $E6              ; 2-byte pointer
+rt4   = $E8
+rt5   = $E9
+rt6   = $EA
+rt7   = $EB

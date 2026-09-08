@@ -70,6 +70,7 @@ s_return  asc 'PRESS ANY KEY TO RETURN TO TITLE'
   put tables
   put board
   put line
+  put units
   put rng
 
   put common

@@ -142,6 +142,14 @@
   sta sec_name+1
   jsr section_end
 
+  jsr section_begin
+  jsr test_units
+  lda #<s_sec_units
+  sta sec_name
+  lda #>s_sec_units
+  sta sec_name+1
+  jsr section_end
+
 * Grand total: a "section" that started from zero.
   stz sec_pass
   stz sec_pass+1
@@ -1243,6 +1251,526 @@ tr_cases
  dfb 0,0,3,3,1,1,0,0       ; K: clear diagonal: both
  dfb $FF
 
+*----------------------------------------------------------
+* Section 12 - the unit list: an empty list (2); a red
+* cruiser added at full strength with every field right (14)
+* and placement refused on an occupied square, off the board
+* and on water (4); a tank, a car and the black cruiser with
+* their class values (27); army limits: one cruiser, three
+* red tanks and cars, five black, each add checked (35);
+* get_unit_at (5); unit_set_pos and unit_kill keep the
+* occupant map right (9); fired-at masks across both bytes
+* and both sides, and units_begin_turn clearing only its own
+* side (9); moved flag and shot count reset (3). 108 checks.
+*----------------------------------------------------------
+test_units
+ MX %11
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ stz expect
+ ldx #SIDE_RED
+ jsr unit_count_alive
+ jsr check_eq              ; nobody home
+ ldx #SIDE_BLACK
+ jsr unit_count_alive
+ jsr check_eq
+* red cruiser at (1,1)
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #1
+ ldy #1
+ jsr add_unit              ; expects id 0
+ stz expect
+ jsr check_eq
+ stz t_class               ; id 0
+ lda #<flds_red_cruiser
+ sta rptr2
+ lda #>flds_red_cruiser
+ sta rptr2+1
+ jsr check_fields
+* placement refused: occupied, off board, water
+ lda #CLASS_TANK
+ ldx #1
+ ldy #1
+ jsr add_unit_fail
+ lda #CLASS_TANK
+ ldx #20
+ ldy #0
+ jsr add_unit_fail
+ lda #TERR_WATER
+ ldx #5
+ ldy #5
+ jsr set_cell
+ lda #CLASS_TANK
+ ldx #5
+ ldy #5
+ jsr add_unit_fail
+ lda #1
+ sta expect
+ ldx #SIDE_RED
+ jsr unit_count_alive
+ jsr check_eq              ; still just the cruiser
+* red tank (2,1) id 1, red car (3,1) id 2
+ lda #CLASS_TANK
+ ldx #2
+ ldy #1
+ jsr add_unit
+ lda #1
+ sta expect
+ jsr check_eq
+ lda #1
+ sta t_class
+ lda #<flds_red_tank
+ sta rptr2
+ lda #>flds_red_tank
+ sta rptr2+1
+ jsr check_fields
+ lda #CLASS_CAR
+ ldx #3
+ ldy #1
+ jsr add_unit
+ lda #2
+ sta expect
+ jsr check_eq
+ lda #2
+ sta t_class
+ lda #<flds_red_car
+ sta rptr2
+ lda #>flds_red_car
+ sta rptr2+1
+ jsr check_fields
+* black cruiser (18,9) id 11
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #18
+ ldy #9
+ jsr add_unit
+ lda #11
+ sta expect
+ jsr check_eq
+ lda #11
+ sta t_class
+ lda #<flds_black_cruiser
+ sta rptr2
+ lda #>flds_black_cruiser
+ sta rptr2+1
+ jsr check_fields
+ lda #12
+ sta expect
+ ldx #18
+ ldy #9
+ jsr get_occupant
+ jsr check_eq              ; occupant is id + 1
+* army limits, red: a second cruiser, then tanks and cars to
+* three each
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #4
+ ldy #1
+ jsr add_unit_fail
+ lda #CLASS_TANK
+ ldx #5
+ ldy #1
+ jsr add_unit
+ lda #3
+ sta expect
+ jsr check_eq
+ lda #CLASS_TANK
+ ldx #6
+ ldy #1
+ jsr add_unit
+ lda #4
+ sta expect
+ jsr check_eq
+ lda #CLASS_TANK
+ ldx #7
+ ldy #1
+ jsr add_unit_fail         ; fourth red tank
+ lda #CLASS_CAR
+ ldx #8
+ ldy #1
+ jsr add_unit
+ lda #5
+ sta expect
+ jsr check_eq
+ lda #CLASS_CAR
+ ldx #9
+ ldy #1
+ jsr add_unit
+ lda #6
+ sta expect
+ jsr check_eq
+ lda #CLASS_CAR
+ ldx #10
+ ldy #1
+ jsr add_unit_fail         ; fourth red car
+ lda #7
+ sta expect
+ ldx #SIDE_RED
+ jsr unit_count_alive
+ jsr check_eq
+* army limits, black: five tanks along row 9, five cars
+* along row 8, a sixth of each refused
+ lda #SIDE_BLACK
+ sta un_side
+ ldx #1
+:btank
+ stx t_dist
+ lda #CLASS_TANK
+ ldy #9
+ jsr add_unit
+ lda t_dist                ; x, so ids 12..16
+ clc
+ adc #11
+ sta expect
+ jsr check_eq
+ ldx t_dist
+ inx
+ cpx #6
+ bne :btank
+ lda #CLASS_TANK
+ ldx #6
+ ldy #9
+ jsr add_unit_fail
+ ldx #1
+:bcar
+ stx t_dist
+ lda #CLASS_CAR
+ ldy #8
+ jsr add_unit
+ lda t_dist                ; x, so ids 17..21
+ clc
+ adc #16
+ sta expect
+ jsr check_eq
+ ldx t_dist
+ inx
+ cpx #6
+ bne :bcar
+ lda #CLASS_CAR
+ ldx #6
+ ldy #8
+ jsr add_unit_fail
+ lda #11
+ sta expect
+ ldx #SIDE_BLACK
+ jsr unit_count_alive
+ jsr check_eq
+* get_unit_at
+ ldx #1
+ ldy #1
+ jsr get_unit_at
+ sta t_cost
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq              ; found
+ stz expect
+ lda t_cost
+ jsr check_eq              ; the red cruiser
+ ldx #18
+ ldy #9
+ jsr get_unit_at
+ ldy #11
+ sty expect
+ jsr check_eq              ; the black cruiser
+ ldx #0
+ ldy #0
+ jsr get_unit_at
+ sta t_cost
+ lda #0
+ rol
+ stz expect
+ jsr check_eq              ; nothing there
+ lda #NO_UNIT
+ sta expect
+ lda t_cost
+ jsr check_eq
+* unit_set_pos: red cruiser (1,1) -> (4,4)
+ lda #0
+ ldx #4
+ ldy #4
+ jsr unit_set_pos
+ stz expect
+ ldx #1
+ ldy #1
+ jsr get_occupant
+ jsr check_eq              ; old square empty
+ lda #1
+ sta expect
+ ldx #4
+ ldy #4
+ jsr get_occupant
+ jsr check_eq              ; new square holds id 0
+ lda #4
+ sta expect
+ lda unit_x
+ jsr check_eq
+ lda unit_y
+ jsr check_eq
+ stz expect
+ ldx #4
+ ldy #4
+ jsr get_unit_at
+ jsr check_eq
+* unit_kill id 0
+ lda #0
+ jsr unit_kill
+ stz expect
+ lda unit_flags
+ and #UF_ALIVE
+ jsr check_eq              ; dead
+ ldx #4
+ ldy #4
+ jsr get_occupant
+ jsr check_eq              ; square empty
+ jsr get_unit_at
+ lda #0
+ rol
+ jsr check_eq              ; nobody found there
+ lda #6
+ sta expect
+ ldx #SIDE_RED
+ jsr unit_count_alive
+ jsr check_eq
+* fired-at masks
+ stz expect
+ lda #1                    ; red tank
+ ldx #11                   ; black cruiser, slot 0
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ jsr check_eq              ; not yet
+ lda #1
+ ldx #11
+ jsr unit_mark_fired_at
+ lda #1
+ ldx #11
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq              ; now yes
+ stz expect
+ lda #1
+ ldx #12                   ; slot 1 untouched
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ jsr check_eq
+ lda #1
+ ldx #21                   ; slot 10, high byte
+ jsr unit_mark_fired_at
+ lda #1
+ ldx #21
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq
+ lda #12                   ; black tank fires at red tank
+ ldx #1
+ jsr unit_mark_fired_at
+ lda #12
+ ldx #1
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ jsr check_eq
+* red's new turn clears red's masks only
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ stz expect
+ lda #1
+ ldx #11
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ jsr check_eq
+ lda #1
+ ldx #21
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ jsr check_eq
+ lda #1
+ sta expect
+ lda #12
+ ldx #1
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ jsr check_eq              ; black's mask survives
+ ldx #SIDE_BLACK
+ jsr units_begin_turn
+ stz expect
+ lda #12
+ ldx #1
+ jsr unit_has_fired_at
+ lda #0
+ rol
+ jsr check_eq
+* moved flag and shots reset with the turn, alive untouched
+ lda unit_flags+1
+ ora #UF_MOVED
+ sta unit_flags+1
+ lda #2
+ sta unit_shots+1
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ stz expect
+ lda unit_flags+1
+ and #UF_MOVED
+ jsr check_eq
+ lda unit_shots+1
+ jsr check_eq
+ lda #UF_ALIVE
+ sta expect
+ lda unit_flags+1
+ and #UF_ALIVE
+ jsr check_eq
+ rts
+
+* add_unit - A = class, X = x, Y = y, un_side already set.
+* Adds and checks that it succeeded; returns A = id.
+add_unit
+ MX %11
+ sta un_class
+ stx un_x
+ sty un_y
+ jsr unit_add
+ sta t_cost
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq
+ lda t_cost
+ rts
+
+* add_unit_fail - same inputs; checks that it was refused.
+add_unit_fail
+ MX %11
+ sta un_class
+ stx un_x
+ sty un_y
+ jsr unit_add
+ lda #0
+ rol
+ stz expect
+ jmp check_eq
+
+* check_fields - For unit id t_class, compare each (array,
+* expected) entry in the list at rptr2 (da array, dfb value;
+* terminated by da 0).
+check_fields
+ MX %11
+ ldy #0
+:field
+ lda (rptr2),y
+ sta rptr
+ iny
+ lda (rptr2),y
+ sta rptr+1
+ iny
+ lda rptr
+ ora rptr+1
+ beq :done
+ lda (rptr2),y
+ sta expect
+ iny
+ phy
+ ldy t_class
+ lda (rptr),y
+ ply
+ jsr check_eq
+ bra :field
+:done
+ rts
+
+flds_red_cruiser
+ da unit_class
+ dfb CLASS_CRUISER
+ da unit_side
+ dfb SIDE_RED
+ da unit_x
+ dfb 1
+ da unit_y
+ dfb 1
+ da unit_hp
+ dfb 30
+ da unit_fuel
+ dfb 240
+ da unit_ammo
+ dfb 16
+ da unit_terr_hp
+ dfb 15
+ da unit_flags
+ dfb UF_ALIVE
+ da unit_fired_lo
+ dfb 0
+ da unit_fired_hi
+ dfb 0
+ da unit_shots
+ dfb 0
+ da 0
+
+flds_red_tank
+ da unit_class
+ dfb CLASS_TANK
+ da unit_side
+ dfb SIDE_RED
+ da unit_x
+ dfb 2
+ da unit_y
+ dfb 1
+ da unit_hp
+ dfb 24
+ da unit_fuel
+ dfb 240
+ da unit_ammo
+ dfb 16
+ da unit_terr_hp
+ dfb 12
+ da unit_flags
+ dfb UF_ALIVE
+ da 0
+
+flds_red_car
+ da unit_class
+ dfb CLASS_CAR
+ da unit_x
+ dfb 3
+ da unit_hp
+ dfb 18
+ da unit_fuel
+ dfb 160
+ da unit_ammo
+ dfb 8
+ da unit_terr_hp
+ dfb 9
+ da 0
+
+flds_black_cruiser
+ da unit_class
+ dfb CLASS_CRUISER
+ da unit_side
+ dfb SIDE_BLACK
+ da unit_x
+ dfb 18
+ da unit_y
+ dfb 9
+ da unit_hp
+ dfb 30
+ da 0
+
 * percent, injected roll, expected (1 hit / 0 miss)
 rh_cases
  dfb 100,99,1
@@ -1408,6 +1936,8 @@ s_sec_lfind  asc 'LINE FIND'
              dfb 0
 s_sec_ltrace asc 'LINE TRACE'
              dfb 0
+s_sec_units  asc 'UNIT LIST'
+             dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0
 s_first_fail asc 'FIRST FAILING CHECK ID'
@@ -1418,5 +1948,6 @@ s_return     asc 'PRESS ANY KEY TO RETURN TO TITLE'
   put tables
   put board
   put line
+  put units
   put rng
   put common

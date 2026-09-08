@@ -6,7 +6,7 @@ The rules specification lives in `combat_chess_iigs_spec-3.md`; the plan for har
 
 ## Status
 
-Milestone 1 in progress. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. The rules data tables (unit classes, fuel costs, hit probabilities), the board cell model with terrain flags, line tracing for paths and line of sight, and the seedable random generator with shot resolution exist with self-tests; units, movement, fire and turn logic are next.
+Milestone 1 in progress. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. The rules data tables (unit classes, fuel costs, hit probabilities), the board cell model with terrain flags, line tracing for paths and line of sight, the unit list with placement, and the seedable random generator with shot resolution exist with self-tests; movement, fire and turn logic are next.
 
 Press T on the title screen to run the rules self-tests.
 
@@ -42,6 +42,7 @@ Boot `out/combatchess.po` in KEGS, GSplus, or on real hardware. The volume conta
 | `src/tables.s` | Rules data: unit class, fuel cost and hit probability tables with their lookups |
 | `src/board.s` | Board geometry, directions, 220-cell terrain board and occupant map, terrain flag tables, destruction |
 | `src/line.s` | Line classification and tracing shared by movement paths and line of sight |
+| `src/units.s` | Unit list as parallel arrays, placement with army limits, occupant upkeep, per-turn fired-at masks |
 | `src/rng.s` | Seedable xorshift32 generator, 0-99 roll, `resolve_hit` with injectable roll |
 | `tools/rng_ref.py` | Byte-exact Python mirror of `rng.s` for replay tools and test known answers |
 | `src/shared.s` | Equates shared by every part (launcher entries, page $11 globals) |

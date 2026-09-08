@@ -46,16 +46,17 @@ Every part is a SYS file with `ORG $2000` that does `put shared` at the top (equ
 
 ## Rules engine
 
-Lives in `src/tables.s`, `src/board.s`, `src/line.s`, `src/rng.s` and the includes that will follow them (units, movement, fire, turns), included by GAME and TEST in that order. Conventions:
+Lives in `src/tables.s`, `src/board.s`, `src/line.s`, `src/units.s`, `src/rng.s` and the includes that will follow them (movement, fire, turns), included by GAME and TEST in that order. Conventions:
 
 - Routines are entered in native mode with 8-bit A/X/Y (`MX %11`), DBR $00, D $0000, and say so if they differ.
-- Scratch is the direct-page range `rt0`-`rt3`, `rptr`, `rptr2` ($E0-$E7) from shared.s, live only within one routine.
+- Scratch is the direct-page range `rt0`-`rt3`, `rptr`, `rptr2`, `rt4`-`rt7` ($E0-$EB) from shared.s, live only within one routine. Each routine's header says which it clobbers.
 - All class-dependent numbers are tables indexed by `CLASS_*`; never branch on class in logic code.
 - Fuel costs come only from `fuel_cost` (class, orientation, distance); `FUEL_NONE` ($FF) marks an illegal distance and can never be afforded.
 - Hit percentages come only from `hit_chance` (class, orientation, range), which returns 0 with carry clear beyond the class's firing range. The table itself depends on orientation and range only.
 - The board is 220 one-byte terrain types at `board`, row-major, reached through `get_cell`/`set_cell` with X = x, Y = y. Terrain behaviour is the `terrain_flags` table (`TF_FIRE` bit 7, `TF_MOVE` bit 6, so `bit terrain_flags,x` then `bpl`/`bvc` tests them), destruction is a type change through `terrain_after`, and cells carry no hit points. Directions are `DIR_N`..`DIR_NW` clockwise, odd values diagonal. Tree penalties are tables of zeros marked UNVERIFIED until measured on the Atari executable.
 - Occupancy is the `occupant` map parallel to `board` (0 empty, else unit id + 1), kept current by unit code and read through `get_occupant`.
 - Lines are `src/line.s`: endpoints in `ln_x0`..`ln_y1`, `line_find` classifies (direction, distance, orientation), `line_trace` walks once and records flags, occupants and tree penalties, then `move_path_clear` or `los_clear` gives the verdict. Whether units block passage or line of fire is UNVERIFIED and sits behind `rule_units_block_move` / `rule_units_block_los`, both defaulting to 1.
+- Units are parallel arrays in `src/units.s` indexed by id: Red 0-10, Black 11-21, slots filled in add order. `unit_add` (parameters in `un_side`/`un_class`/`un_x`/`un_y`) enforces placement and the spec 6 army limits from `side_class_max`; `unit_set_pos` and `unit_kill` are the only other writers of the occupant map. `UF_ALIVE` is bit 7 of `unit_flags`. The spec 13 fired-at rule is a 16-bit mask per attacker over enemy slots, cleared by `units_begin_turn`.
 - Randomness comes only from `src/rng.s`: xorshift32 in the 4 bytes at `rng_state`, seeded through `rng_seed` (rt0-rt3, zero becomes a default). `resolve_hit` takes a percent, returns carry for hit and the roll in A, and draws through `roll_vec` so tests can inject rolls. `tools/rng_ref.py` is the byte-exact host mirror; the self-tests hold known answers from it, so any change to the generator must update both and will invalidate replays.
 - No rendering or sound from rules code (spec section 32); it will emit events for the display layer.
 - Every value is 8-bit; the largest in the spec is max fuel, 240.
