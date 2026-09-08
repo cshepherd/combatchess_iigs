@@ -33,7 +33,7 @@ STATUS_INK       = COL_BLACK
 STATUS_HEAD_Y    = 90
 STATUS_ROW_Y     = 110
 STATUS_ROW_STEP  = 9
-STATUS_HUD_Y     = 197     ; the clock line sits at the very bottom here
+STATUS_HUD_TOP   = 184     ; the two status lines sit at the very bottom here
 
 VIEW_BOARD = 0
 VIEW_OWN   = 1
@@ -75,16 +75,16 @@ status_close
  MX %00
  lda #VIEW_BOARD
 * status_set_view - A = VIEW_*; picks the side shown and
-* where the clock line lives, and asks for a redraw.
+* where the status lines live, and asks for a redraw.
 status_set_view
  MX %00
  sta status_view
- lda #HUD1_Y
- sta hud1_y
+ lda #HUD_TOP
+ sta hud_top
  lda status_view
  beq :board
- lda #STATUS_HUD_Y
- sta hud1_y
+ lda #STATUS_HUD_TOP
+ sta hud_top
  lda active_side
  and #$00FF
  ldx status_view
@@ -230,7 +230,7 @@ status_draw
  bcs :rows_done
  jmp :row
 :rows_done
- jmp draw_hud1             ; the running clock, at the bottom
+ jmp draw_hud              ; both status lines at the bottom, as the original
 
 * st_num - A = value, X = x, Y = width: the number in that
 * many digits with leading zeros, on the current row.

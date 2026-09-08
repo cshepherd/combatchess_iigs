@@ -38,6 +38,8 @@
   rep $30
   MX %00
   jsr shr_init
+  lda #TEXT_OPAQUE
+  jsr set_text_mode         ; inverse fields need the cell painted
   jsr title_palette_load
 :show
   jsr draw_title

@@ -187,6 +187,19 @@ set_colors
  jsl TOOLBOX               ; _SetBackColor (pops bg)
  rts
 
+* set_text_mode - A = QuickDraw text mode: TEXT_OPAQUE paints
+* each glyph's cell in the background colour, TEXT_FORE only
+* the glyph's own pixels. Native, 16-bit M/X.
+*----------------------------------------------------------
+TEXT_OPAQUE = $0000        ; modeCopy
+TEXT_FORE   = $8000        ; modeForeCopy
+set_text_mode
+ MX %00
+ pha
+ ldx #$9C04
+ jsl TOOLBOX               ; _SetTextMode (ROM listing: $9C04)
+ rts
+
 *----------------------------------------------------------
 * draw_cstr - Draw the C string at str_ptr with its baseline
 * at (X, Y) in 320-mode pixels. Strings live in the part's
@@ -300,6 +313,20 @@ lb_dec2
  jmp lb_dec
 :two
  ldx #2
+ jmp lb_dec
+
+* lb_dec3z - append A as three digits with leading zeros.
+lb_dec3z
+ MX %00
+ cmp #100
+ bcs :three
+ pha
+ lda #s_lb_zero
+ jsr lb_str
+ pla
+ jmp lb_dec2
+:three
+ ldx #3
  jmp lb_dec
 
 lb_end

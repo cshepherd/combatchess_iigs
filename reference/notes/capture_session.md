@@ -270,6 +270,12 @@ Spec section 34 items settled or narrowed by this session:
   says; the roster's SQR DMG column shows them.
 - **Destruction effect**: a brown player/missile burst about two
   squares across, drawn over the square where the unit died.
-- **Status line** (checklist H): two lines of 40 columns at $1FB0:
-  `MM:SS # SQ=15, GM=30, AM=16, FL=240` for Red (`#`) and `_` for
-  Black, matching spec section 25.
+- **Status line** (checklist H): two lines of 40 columns at $1FB0,
+  one per side (two clocks, not one line per cursor as spec 25 reads
+  the manual): `  19:55 #  SQ=15, GM=30, AM=16, FL=240` for Red with
+  `#` on the side to move and `_` on the other, the clock at column
+  2, the marker at 8, SQ GM AM FL at 11, 18, 25, 32. Black text on a
+  grey strip (COLPF2 $08, painted by the display list interrupt on
+  the last board row), and the border below the strip is brown
+  ($36). With the computer playing both sides the lines show only
+  the clocks.

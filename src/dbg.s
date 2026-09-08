@@ -11,8 +11,9 @@
 * with #$00FF.
 *
 * Layout: 20 x 11 squares of 16 x 16 pixels fill the top 176
-* rows, as on the Atari; two text lines below them: the game
-* state, then the unit under the cursor or the last message.
+* rows, as on the Atari, then the original's two status lines
+* (see HUD below) and, on the border under them, the debug
+* board's own line: the last message, else the turn summary.
 * The cursor is a white outline (select), thick box (move) or
 * cross (fire). While a unit is selected, legal destinations
 * get an orange dot and legal targets (enemy units, and
@@ -27,9 +28,8 @@
 *----------------------------------------------------------
 CELL_WB    = 8             ; cell width in bytes (16 pixels)
 CELL_H     = 16            ; cell height in rows
-HUD_Y      = 176           ; first row below the board
-HUD1_Y     = HUD_Y+9       ; baselines of the two HUD lines
-HUD2_Y     = HUD_Y+20
+HUD_TOP    = 176           ; the original's two status lines start here
+DBG_TOP    = 192           ; the debug board's line, on the border below them
 SCREEN_ROW = 160           ; bytes per SHR row
 SCREEN     = $2000         ; SHR pixels in bank $E1
 
@@ -40,10 +40,10 @@ MODE_FIRE   = 2
 * Palette 0 slots used here; 1-5 belong to the board (art.s).
 COL_BLACK    = 0
 COL_WHITE    = 6
-COL_YELLOW   = 7
+COL_HUD_BG   = 7           ; the status lines' grey, Atari $08
 COL_GREY     = 8
 COL_PURPLE   = 9
-COL_RED      = 10
+COL_HUD_BORDER = 10        ; the border under them, Atari $36
 COL_LTGREY   = 11
 COL_ORANGE   = 12
 COL_CYAN     = 13
@@ -60,8 +60,8 @@ KEY_SPACE  = $20
 KEY_TAB    = $09
 
 dbg_palette
- dw $0000,$0555,$05C3,$0261,$026E,$0A63,$0EEE,$0FE3
- dw $0999,$093B,$0D22,$0BBB,$0F92,$04DE,$0800,$0FFF
+ dw $0000,$0555,$05C3,$0261,$026E,$0A63,$0EEE,$0666
+ dw $0999,$093B,$0741,$0BBB,$0F92,$04DE,$0800,$0FFF
 
 *----------------------------------------------------------
 * dbg_init - Palette and display state. Native 16-bit.
@@ -87,8 +87,11 @@ dbg_init
  sta last_sec
  stz msg_ptr
  stz status_view
- lda #HUD1_Y
- sta hud1_y
+ lda #HUD_TOP
+ sta hud_top
+ jsr hud_defaults
+ lda #TEXT_FORE
+ jsr set_text_mode         ; the status lines' descenders overlap the next strip
  lda #1
  sta dirty
  rts
@@ -149,7 +152,7 @@ update_clock
  cmp last_sec
  beq :same
  sta last_sec
- jsr draw_hud1
+ jmp draw_hud_lines
 :same
  rts
 
@@ -419,6 +422,12 @@ do_select
 :ours
  lda sel_tmp
  sta sel_unit
+ lda active_side
+ and #$00FF
+ asl
+ tax
+ lda sel_tmp
+ sta hud_shown,x           ; the side's line keeps showing it
  lda #MODE_MOVE
  sta mode
  lda #s_move_hint
@@ -1104,51 +1113,316 @@ fill_rect
  rts
 
 *----------------------------------------------------------
-* HUD: two text lines under the board.
+* HUD: the original's two status lines under the board (spec
+* 25; captured in reference/raw/status/), one per side:
+*
+*   19:55 #  SQ=15, GM=30, AM=16, FL=240
+*
+* the side's remaining time, a marker (# on the side to move
+* and _ on the other, as captured at the start of a game;
+* UNVERIFIED meaning), then the square hit points, hit
+* points, ammunition and fuel of the side's unit: for the
+* side to move the selected unit, else the unit under the
+* cursor if it is theirs; otherwise the last unit the side
+* selected, its Battle Cruiser to begin with. (Spec 25 reads
+* the manual as one line per cursor, but the capture shows
+* one clock per side; which unit the waiting side's line
+* follows is UNVERIFIED.) In move mode FL is the fuel left
+* after the move under the cursor (spec 25.1). Black text on
+* the grey strip the original's display list interrupt paints
+* (Atari $08), 16 rows; below it the original shows its
+* brown border ($36), where the debug board writes its
+* message or turn summary. Fields sit at the original's
+* 8-pixel columns; numbers are zero-padded like the status
+* screen's (UNVERIFIED on the HUD itself, checklist H08-H13).
 *----------------------------------------------------------
-* HUD_ADDR - screen offset of the first HUD row. Merlin has
-* no operator precedence: this evaluates left to right.
-HUD_ADDR = HUD_Y*SCREEN_ROW+SCREEN
+HUD_LINE_H = 8
+HX_CLOCK   = 16            ; column 2
+HX_MARK    = 64            ; column 8
+HX_SQ      = 88            ; column 11
+HX_GM      = 144           ; column 18
+HX_AM      = 200           ; column 25
+HX_FL      = 256           ; column 32
+DBG_ADDR   = DBG_TOP*SCREEN_ROW+SCREEN ; Merlin: left to right
+DBG_Y      = 199           ; the debug line's baseline
 
+* draw_hud - both lines from hud_top and, on the board view,
+* the debug line below them. Text is drawn foreground-only
+* (TEXT_FORE) and every strip is cleared before any text:
+* the font's comma and _ reach a row or two below the
+* baseline, into the next strip.
 draw_hud
  MX %00
- lda #HUD_ADDR
- sta fr_addr
- lda #SCREEN_ROW
- sta fr_w
- lda #200-HUD_Y
- sta fr_h
- lda #COL_BLACK
- jsr set_fill_colour
- jsr fill_rect
- jsr draw_hud1
- jmp draw_hud2
+ lda hud_top
+ cmp #HUD_TOP
+ bne :lines                ; the status view shows nothing below
+ jsr dbg_clear
+ jsr draw_hud_lines
+ jmp dbg_text
+:lines
+ jmp draw_hud_lines
 
-* draw_hud1 - "RED TO MOVE  09:58  MOVES 1/3  FIRE OR MOVE",
-* or the pause, or the result.
-draw_hud1
+* draw_hud_lines - both status lines, cleared then drawn.
+draw_hud_lines
  MX %00
- lda hud1_y
- sec
- sbc #9
+ lda #0
+ jsr hud_clear_line
+ lda #1
+ jsr hud_clear_line
+ lda #0
+ jsr hud_draw_line
+ lda #1
+ jmp hud_draw_line
+
+* hud_clear_line - A = side: its 8-row strip in grey.
+hud_clear_line
+ MX %00
+ asl
+ asl
+ asl                       ; side * 8 rows
+ clc
+ adc hud_top
  jsr rows_to_offset
  clc
  adc #SCREEN
- sta fr_addr               ; the strip from 9 above the baseline
+ sta fr_addr
  lda #SCREEN_ROW
  sta fr_w
- lda #11
+ lda #HUD_LINE_H
  sta fr_h
- lda #COL_BLACK
+ lda #COL_HUD_BG
  jsr set_fill_colour
- jsr fill_rect
+ jmp fill_rect
+
+* hud_draw_line - A = side: that side's text.
+hud_draw_line
+ MX %00
+ sta hud_side
+ asl
+ asl
+ asl
+ clc
+ adc hud_top
+ clc
+ adc #7
+ sta hud_y                 ; the baseline
+ lda #COL_BLACK
+ ldx #COL_HUD_BG
+ jsr set_colors
+* the clock
+ ldx hud_side
+ jsr eng_clock_remaining   ; clk_min / clk_sec
+ jsr lb_reset
+ lda clk_min
+ jsr lb_dec2
+ lda #s_colon
+ jsr lb_str
+ lda clk_sec
+ jsr lb_dec2
+ jsr lb_end
+ ldx #HX_CLOCK
+ jsr hud_text
+* the marker
+ lda active_side
+ and #$00FF
+ cmp hud_side
+ bne :waiting
+ lda #s_mark_move
+ bra :mark
+:waiting
+ lda #s_mark_wait
+:mark
+ sta str_ptr
+ ldx #HX_MARK
+ ldy hud_y
+ jsr draw_cstr
+* the unit
+ jsr hud_pick_unit
+ sta hud_unit
+ tax
+ lda unit_terr_hp,x
+ and #$00FF
+ ldx #HX_SQ
+ ldy #s_h_sq
+ jsr hud_field
+ ldx hud_unit
+ lda unit_hp,x
+ and #$00FF
+ ldx #HX_GM
+ ldy #s_h_gm
+ jsr hud_field
+ ldx hud_unit
+ lda unit_ammo,x
+ and #$00FF
+ ldx #HX_AM
+ ldy #s_h_am
+ jsr hud_field
+ ldx hud_unit
+ lda unit_fuel,x
+ and #$00FF
+ sta hud_val
+ lda mode
+ cmp #MODE_MOVE
+ bne :fuel
+ lda active_side
+ and #$00FF
+ cmp hud_side
+ bne :fuel
+ lda sel_unit
+ cmp #$FF
+ beq :fuel
+ ldx cur_x
+ ldy cur_y
+ jsr eng_move_validate
+ bcc :fuel
+ lda mv_fuel_after
+ and #$00FF
+ sta hud_val               ; spec 25.1: the fuel after that move
+:fuel
+ lda hud_val
+ ldx #HX_FL
+ ldy #s_h_fl
+ jmp hud_field3
+
+* hud_pick_unit - the unit hud_side's line shows (see above).
+* Out: A = id.
+hud_pick_unit
+ MX %00
+ lda active_side
+ and #$00FF
+ cmp hud_side
+ bne :remembered
+ lda sel_unit
+ cmp #$FF
+ bne :got
+ ldx cur_x
+ ldy cur_y
+ jsr eng_get_unit_at
+ bcc :remembered
+ tax
+ lda unit_side,x
+ and #$00FF
+ cmp hud_side
+ bne :remembered
+ txa
+ rts
+:remembered
+ lda hud_side
+ asl
+ tax
+ lda hud_shown,x
+:got
+ rts
+
+* hud_defaults - each side's remembered unit starts as its
+* Battle Cruiser (its first unit if it has none).
+hud_defaults
+ MX %00
+ stz hud_side
+:side
+ ldx hud_side
+ lda side_first_id,x
+ and #$00FF
+ sta tmp
+ sta hud_val
+ lda side_units,x
+ and #$00FF
+ sta tmp2
+:scan
+ lda tmp2
+ beq :store
+ ldx tmp
+ lda unit_class,x
+ and #$00FF
+ cmp #CLASS_CRUISER
+ bne :more
+ lda tmp
+ sta hud_val
+ bra :store
+:more
+ inc tmp
+ dec tmp2
+ bra :scan
+:store
+ lda hud_side
+ asl
+ tax
+ lda hud_val
+ sta hud_shown,x
+ inc hud_side
+ lda hud_side
+ cmp #2
+ bcc :side
+ rts
+
+* hud_field - A = value, X = x, Y = label: "SQ=15," at x on
+* the line; hud_field3 three digits and no comma.
+hud_field
+ MX %00
+ sta hud_val
+ stx hud_x
+ jsr lb_reset
+ tya
+ jsr lb_str
+ lda hud_val
+ jsr lb_dec2
+ lda #s_comma
+ jsr lb_str
+ bra hud_end
+hud_field3
+ MX %00
+ sta hud_val
+ stx hud_x
+ jsr lb_reset
+ tya
+ jsr lb_str
+ lda hud_val
+ jsr lb_dec3z
+hud_end
+ MX %00
+ jsr lb_end
+ ldx hud_x
+* hud_text - line_buf at (X, hud_y).
+hud_text
+ MX %00
+ lda #line_buf
+ sta str_ptr
+ ldy hud_y
+ jmp draw_cstr
+
+* dbg_clear / dbg_text - the border strip under the HUD, then
+* the last message on it, shown once, else "B 1  MOVES 0/3
+* FIRE OR MOVE", PAUSED, or GAME OVER.
+dbg_clear
+ MX %00
+ lda #DBG_ADDR
+ sta fr_addr
+ lda #SCREEN_ROW
+ sta fr_w
+ lda #200-DBG_TOP
+ sta fr_h
+ lda #COL_HUD_BORDER
+ jsr set_fill_colour
+ jmp fill_rect
+
+dbg_text
+ MX %00
+ lda #COL_BLACK
+ ldx #COL_HUD_BORDER
+ jsr set_colors
+ lda msg_ptr
+ beq :summary
+ sta str_ptr
+ stz msg_ptr
+ bra :draw
+:summary
  jsr lb_reset
  lda game_result
  and #$00FF
  beq :playing
  lda #s_game_over
  jsr lb_str
- jmp :draw
+ bra :end
 :playing
  lda #s_board_tag
  jsr lb_str
@@ -1156,23 +1430,6 @@ draw_hud1
  and #$00FF
  ldx #2
  jsr lb_dec
- lda #s_two_spaces
- jsr lb_str
- lda active_side
- and #$00FF
- asl
- tax
- lda side_names,x
- jsr lb_str
- lda #s_to_move
- jsr lb_str
- lda clk_min
- ldx #2
- jsr lb_dec
- lda #s_colon
- jsr lb_str
- lda clk_sec
- jsr lb_dec2
  lda #s_moves
  jsr lb_str
  lda moves_used
@@ -1192,7 +1449,7 @@ draw_hud1
  beq :phase
  lda #s_paused_tag
  jsr lb_str
- jmp :draw
+ bra :end
 :phase
  lda turn_phase
  and #$00FF
@@ -1200,114 +1457,16 @@ draw_hud1
  tax
  lda phase_names,x
  jsr lb_str
-:draw
- jsr lb_end
- lda active_side
- and #$00FF
- tax
- lda side_hud_colour,x
- and #$00FF
- ldx #COL_BLACK
- jsr set_colors
- lda #line_buf
- sta str_ptr
- ldx #2
- ldy hud1_y
- jmp draw_cstr
-
-side_hud_colour dfb COL_RED,COL_YELLOW
-phase_names da s_ph_any,s_ph_fire,s_ph_move
-
-* draw_hud2 - the last message if one is waiting (shown until
-* the next redraw), else the selected unit (or the one under
-* the cursor): "TANK  SQ=12 GM=24 AM=16 FL=240", plus the fuel
-* after the move the cursor proposes (spec 25.1).
-draw_hud2
- MX %00
- lda msg_ptr
- beq :unit
- sta str_ptr
- stz msg_ptr
- lda #COL_LTGREY
- ldx #COL_BLACK
- jsr set_colors
- ldx #2
- ldy #HUD2_Y
- jmp draw_cstr
-:unit
- lda sel_unit
- cmp #$FF
- bne :have
- ldx cur_x
- ldy cur_y
- jsr eng_get_unit_at
- bcs :have
- lda #s_no_unit
- sta str_ptr
- jmp :draw
-:have
- sta hud_unit
- jsr lb_reset
- ldx hud_unit
- lda unit_class,x
- and #$00FF
- asl
- tax
- lda class_short_ptrs,x
- jsr lb_str
- lda #s_sq
- jsr lb_str
- ldx hud_unit
- lda unit_terr_hp,x
- and #$00FF
- ldx #2
- jsr lb_dec
- lda #s_gm
- jsr lb_str
- ldx hud_unit
- lda unit_hp,x
- and #$00FF
- ldx #2
- jsr lb_dec
- lda #s_am
- jsr lb_str
- ldx hud_unit
- lda unit_ammo,x
- and #$00FF
- ldx #2
- jsr lb_dec
- lda #s_fl
- jsr lb_str
- ldx hud_unit
- lda unit_fuel,x
- and #$00FF
- ldx #3
- jsr lb_dec
- lda mode
- cmp #MODE_MOVE
- bne :end
- lda sel_unit
- ldx cur_x
- ldy cur_y
- jsr eng_move_validate
- bcc :end
- lda #s_arrow_fl
- jsr lb_str
- lda mv_fuel_after
- and #$00FF
- ldx #3
- jsr lb_dec
 :end
  jsr lb_end
  lda #line_buf
  sta str_ptr
 :draw
- lda #COL_TEXT
- ldx #COL_BLACK
- jsr set_colors
  ldx #2
- ldy #HUD2_Y
+ ldy #DBG_Y
  jmp draw_cstr
+
+phase_names da s_ph_any,s_ph_fire,s_ph_move
 
 *----------------------------------------------------------
 * Engine wrappers: 16-bit in, 8-bit call, 16-bit out. A
@@ -1453,7 +1612,6 @@ eng_clock_remaining
 *----------------------------------------------------------
 * Lines must stay under about 40 characters to fit 320
 * pixels of Shaston 8.
-class_short_ptrs da s_cruiser,s_tank,s_car
 s_cruiser       asc 'CRUISER'
                 dfb 0
 s_tank          asc 'TANK'
@@ -1541,9 +1699,21 @@ s_red           asc 'RED'
                 dfb 0
 s_black         asc 'BLACK'
                 dfb 0
-s_to_move       asc '  '
-                dfb 0
 s_colon         asc ':'
+                dfb 0
+s_comma         asc ','
+                dfb 0
+s_mark_move     asc '#'
+                dfb 0
+s_mark_wait     asc '_'
+                dfb 0
+s_h_sq          asc 'SQ='
+                dfb 0
+s_h_gm          asc 'GM='
+                dfb 0
+s_h_am          asc 'AM='
+                dfb 0
+s_h_fl          asc 'FL='
                 dfb 0
 s_zero          asc '0'
                 dfb 0
@@ -1561,18 +1731,6 @@ s_ph_fire       asc 'FIRE FIRST'
                 dfb 0
 s_ph_move       asc 'MOVE ONLY NOW'
                 dfb 0
-s_no_unit       asc '-'
-                dfb 0
-s_sq            asc ' SQ='
-                dfb 0
-s_gm            asc ' GM='
-                dfb 0
-s_am            asc ' AM='
-                dfb 0
-s_fl            asc ' FL='
-                dfb 0
-s_arrow_fl      asc ' >FL='
-                dfb 0
 
 *----------------------------------------------------------
 * State (words unless noted)
@@ -1587,7 +1745,12 @@ quit       ds 2
 over_shown ds 2
 shown_side ds 2
 last_sec   ds 2
-hud1_y     ds 2            ; baseline of the clock line (board: HUD1_Y)
+hud_top    ds 2            ; top row of the status lines: HUD_TOP, or STATUS_HUD_TOP
+hud_side   ds 2
+hud_y      ds 2
+hud_x      ds 2
+hud_val    ds 2
+hud_shown  ds 4            ; each side's remembered unit, a word per side
 msg_ptr    ds 2
 key_code   ds 2
 key_vec    ds 2
