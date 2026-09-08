@@ -71,10 +71,26 @@
   jsr section_end
 
   jsr section_begin
-  jsr test_ranges
+  jsr test_move_bounds
   lda #<s_sec_range
   sta sec_name
   lda #>s_sec_range
+  sta sec_name+1
+  jsr section_end
+
+  jsr section_begin
+  jsr test_hit_table
+  lda #<s_sec_hit
+  sta sec_name
+  lda #>s_sec_hit
+  sta sec_name+1
+  jsr section_end
+
+  jsr section_begin
+  jsr test_fire_bounds
+  lda #<s_sec_fire
+  sta sec_name
+  lda #>s_sec_fire
   sta sec_name+1
   jsr section_end
 
@@ -263,7 +279,118 @@ fuel_cases
 * 1 <= distance <= move_range, and returns FUEL_NONE exactly
 * when illegal. 2 checks x 3 x 2 x 9 = 108 checks.
 *----------------------------------------------------------
-test_ranges
+test_move_bounds
+ MX %11
+ lda #<fuel_cost
+ sta lookup_vec
+ lda #>fuel_cost
+ sta lookup_vec+1
+ lda #<move_range
+ sta range_vec
+ lda #>move_range
+ sta range_vec+1
+ lda #MAX_MOVE_DIST+2
+ sta t_max
+ lda #FUEL_NONE
+ sta t_illegal
+ jmp sweep_bounds
+
+*----------------------------------------------------------
+* Section 4 - hit_chance returns every entry of the spec 11
+* tables with carry set, fired by the Battle Cruiser, whose
+* ranges span both rows. 2 checks per case, 19 cases:
+* 38 checks.
+*----------------------------------------------------------
+test_hit_table
+ MX %11
+ ldx #0                    ; 3 bytes per case
+:case
+ lda hit_cases,x
+ cmp #$FF
+ beq :done
+ lda hit_cases+2,x
+ sta rt1                   ; expected percent
+ lda hit_cases+1,x
+ tay                       ; range
+ lda hit_cases,x
+ phx
+ tax                       ; orientation
+ lda #CLASS_CRUISER
+ jsr hit_chance
+ php
+ jsr check_eq              ; percent matches the spec table
+ plp
+ lda #0
+ rol                       ; A = carry from hit_chance
+ ldy #1
+ sty rt1
+ jsr check_eq              ; and it was reported in range
+ plx
+ inx
+ inx
+ inx
+ bra :case
+:done
+ rts
+
+* orientation, range, expected percent (spec 11.1 / 11.2).
+hit_cases
+ dfb ORIENT_ORTH,1,100
+ dfb ORIENT_ORTH,2,94
+ dfb ORIENT_ORTH,3,88
+ dfb ORIENT_ORTH,4,82
+ dfb ORIENT_ORTH,5,76
+ dfb ORIENT_ORTH,6,70
+ dfb ORIENT_ORTH,7,64
+ dfb ORIENT_ORTH,8,58
+ dfb ORIENT_ORTH,9,52
+ dfb ORIENT_ORTH,10,46
+ dfb ORIENT_ORTH,11,40
+ dfb ORIENT_DIAG,1,98
+ dfb ORIENT_DIAG,2,89
+ dfb ORIENT_DIAG,3,81
+ dfb ORIENT_DIAG,4,72
+ dfb ORIENT_DIAG,5,64
+ dfb ORIENT_DIAG,6,56
+ dfb ORIENT_DIAG,7,47
+ dfb ORIENT_DIAG,8,39
+ dfb $FF
+
+*----------------------------------------------------------
+* Section 5 - for every class, orientation and range 0..12
+* (one past the table), hit_chance reports in range exactly
+* when 1 <= range <= fire_range, and returns 0 exactly when
+* out of range. 2 checks x 3 x 2 x 13 = 156 checks.
+*----------------------------------------------------------
+test_fire_bounds
+ MX %11
+ lda #<hit_chance
+ sta lookup_vec
+ lda #>hit_chance
+ sta lookup_vec+1
+ lda #<fire_range
+ sta range_vec
+ lda #>fire_range
+ sta range_vec+1
+ lda #MAX_FIRE_DIST+2
+ sta t_max
+ lda #0
+ sta t_illegal
+ jmp sweep_bounds
+
+*----------------------------------------------------------
+* sweep_bounds - Shared body of the bounds sections. For
+* every class and orientation, and every distance from 0 up
+* to t_max exclusive, calls the lookup and checks that
+*   carry is set exactly when 1 <= distance <= range, and
+*   A equals t_illegal exactly when carry is clear.
+* In: lookup_vec -> routine (A=class, X=orient, Y=distance)
+*                   returning A and carry like fuel_cost
+*     range_vec  -> routine (A=class, X=orient) returning
+*                   A = range, like move_range
+*     t_max, t_illegal as above
+*----------------------------------------------------------
+sweep_bounds
  MX %11
  stz t_class
 :class
@@ -271,18 +398,18 @@ test_ranges
 :orient
  lda t_class
  ldx t_orient
- jsr move_range
+ jsr call_range
  sta t_range
  stz t_dist
 :dist
  lda t_class
  ldx t_orient
  ldy t_dist
- jsr fuel_cost
+ jsr call_lookup
  sta t_cost
  lda #0
  rol
- sta t_legal               ; 1 if fuel_cost said legal
+ sta t_legal               ; 1 if the lookup said legal
 * expected: legal iff 1 <= dist <= range
  lda #0
  ldy t_dist
@@ -295,19 +422,19 @@ test_ranges
 :expect
  sta rt1
  lda t_legal
- jsr check_eq              ; carry agrees with move_range
+ jsr check_eq              ; carry agrees with the range table
  lda t_cost
- cmp #FUEL_NONE
+ cmp t_illegal
  beq :none
  lda #1
  bra :value
 :none
  lda #0
 :value
- jsr check_eq              ; FUEL_NONE exactly when illegal
+ jsr check_eq              ; illegal marker exactly when illegal
  inc t_dist
  lda t_dist
- cmp #MAX_MOVE_DIST+2
+ cmp t_max
  bne :dist
  inc t_orient
  lda t_orient
@@ -319,12 +446,19 @@ test_ranges
  bne :class
  rts
 
-t_class  ds 1
-t_orient ds 1
-t_range  ds 1
-t_dist   ds 1
-t_cost   ds 1
-t_legal  ds 1
+call_lookup jmp (lookup_vec)
+call_range  jmp (range_vec)
+
+lookup_vec ds 2
+range_vec  ds 2
+t_class    ds 1
+t_orient   ds 1
+t_range    ds 1
+t_dist     ds 1
+t_cost     ds 1
+t_legal    ds 1
+t_max      ds 1
+t_illegal  ds 1
 
 *----------------------------------------------------------
 * check_eq - One check: A must equal rt1. Numbers the check,
@@ -450,6 +584,10 @@ s_sec_class  asc 'CLASS TABLES'
 s_sec_fuel   asc 'FUEL TABLE'
              dfb 0
 s_sec_range  asc 'MOVE RANGE BOUNDS'
+             dfb 0
+s_sec_hit    asc 'HIT TABLE'
+             dfb 0
+s_sec_fire   asc 'FIRE RANGE BOUNDS'
              dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0

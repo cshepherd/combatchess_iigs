@@ -50,6 +50,7 @@ Lives in `src/tables.s` and the includes that will follow it (movement, fire, tu
 - Scratch is the direct-page range `rt0`-`rt3`, `rptr`, `rptr2` ($E0-$E7) from shared.s, live only within one routine.
 - All class-dependent numbers are tables indexed by `CLASS_*`; never branch on class in logic code.
 - Fuel costs come only from `fuel_cost` (class, orientation, distance); `FUEL_NONE` ($FF) marks an illegal distance and can never be afforded.
+- Hit percentages come only from `hit_chance` (class, orientation, range), which returns 0 with carry clear beyond the class's firing range. The table itself depends on orientation and range only.
 - No rendering or sound from rules code (spec section 32); it will emit events for the display layer.
 - Every value is 8-bit; the largest in the spec is max fuel, 240.
 

@@ -30,6 +30,10 @@ ORIENT_DIAG = 1
 * entries plus the unused distance 0.
 MAX_MOVE_DIST = 7
 
+* Longest shot any class can take: the Battle Cruiser's
+* eleven squares orthogonally. Bounds the hit table.
+MAX_FIRE_DIST = 11
+
 * Fuel-table marker for "cannot move that far". No unit can
 * ever pay it (max fuel is 240), so comparing a unit's fuel
 * against the cost rejects illegal distances for free.
@@ -114,6 +118,62 @@ fuel_cost
  rts
 :none
  lda #FUEL_NONE
+ clc
+ rts
+
+*----------------------------------------------------------
+* Hit probability (spec 11). Percent chance that a shot at
+* the given range hits, by orientation only: the attacker's
+* class decides how far it may shoot (class_fire_*), not how
+* accurate it is. Two 16-byte rows, orthogonal then
+* diagonal, indexed by range (entry 0 unused, entries past
+* the table zero). Index = orientation*16 + range;
+* hit_chance does the arithmetic and the class bound.
+*----------------------------------------------------------
+hit_table
+* Orthogonal, range 1-11 (spec 11.1)
+ dfb 0,100,94,88,82,76,70,64,58,52,46,40,0,0,0,0
+* Diagonal, range 1-8 (spec 11.2)
+ dfb 0,98,89,81,72,64,56,47,39,0,0,0,0,0,0,0
+
+*----------------------------------------------------------
+* hit_chance - Percent chance that a shot hits its target.
+* In:  A = attacker's class, X = orientation, Y = range
+* Out: A = percent (1-100), carry set: range is within the
+*      class's firing range in that orientation
+*      A = 0, carry clear: out of range, or range 0
+* Preserves X and Y. Line of sight, ammo and turn rules are
+* the caller's business; this is only the table.
+*----------------------------------------------------------
+hit_chance
+ MX %11
+ cpy #0
+ beq :none
+ phx
+ jsr fire_range            ; A = class's range this orientation
+ plx
+ sta rt0
+ cpy rt0
+ beq :in_range
+ bcs :none                 ; range > class's range
+:in_range
+ txa
+ asl
+ asl
+ asl
+ asl                       ; orientation*16
+ sta rt0
+ tya
+ clc
+ adc rt0                   ; + range
+ phx
+ tax
+ lda hit_table,x
+ plx
+ sec
+ rts
+:none
+ lda #0
  clc
  rts
 
