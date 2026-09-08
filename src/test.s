@@ -40,7 +40,7 @@
   ldy #20
   jsr draw_cstr
 
-  lda #40
+  lda #36
   sta line_y
 
   sep $30
@@ -123,6 +123,22 @@
   lda #<s_sec_terrain
   sta sec_name
   lda #>s_sec_terrain
+  sta sec_name+1
+  jsr section_end
+
+  jsr section_begin
+  jsr test_line_find
+  lda #<s_sec_lfind
+  sta sec_name
+  lda #>s_sec_lfind
+  sta sec_name+1
+  jsr section_end
+
+  jsr section_begin
+  jsr test_line_trace
+  lda #<s_sec_ltrace
+  sta sec_name
+  lda #>s_sec_ltrace
   sta sec_name+1
   jsr section_end
 
@@ -967,6 +983,266 @@ des_cases
  dfb TERR_WATER,0,TERR_WATER
  dfb TERR_CLEAR,0,TERR_CLEAR
 
+*----------------------------------------------------------
+* Section 10 - line_find: every direction from (5,5), long
+* lines from a corner, and the rejections (same square, not
+* a line, off the board). 4 checks per case (found, dir,
+* dist, orient), 15 cases: 60 checks.
+*----------------------------------------------------------
+test_line_find
+ MX %11
+ ldx #0                    ; 7 bytes per case
+:case
+ lda lf_cases,x
+ cmp #$FF
+ beq :done
+ stx t_class
+ sta ln_x0
+ lda lf_cases+1,x
+ sta ln_y0
+ lda lf_cases+2,x
+ sta ln_x1
+ lda lf_cases+3,x
+ sta ln_y1
+ jsr line_find
+ lda #0
+ rol
+ sta t_legal
+ ldx t_class
+ lda lf_cases+4,x
+ sta expect
+ lda t_legal
+ jsr check_eq              ; found or rejected as expected
+ lda lf_cases+5,x
+ sta expect
+ lda ln_dir
+ jsr check_eq              ; direction
+ lda lf_cases+6,x
+ sta expect
+ lda ln_dist
+ jsr check_eq              ; distance
+ lda lf_cases+4,x
+ beq :no_orient
+ lda lf_cases+5,x
+ and #1
+:no_orient
+ sta expect
+ lda ln_orient
+ jsr check_eq              ; orientation is the direction's low bit
+ txa
+ clc
+ adc #7
+ tax
+ bra :case
+:done
+ rts
+
+* x0, y0, x1, y1, expected found, dir, dist ($FF/0 when not found)
+lf_cases
+ dfb 5,5,5,2,1,DIR_N,3
+ dfb 5,5,9,1,1,DIR_NE,4
+ dfb 5,5,12,5,1,DIR_E,7
+ dfb 5,5,8,8,1,DIR_SE,3
+ dfb 5,5,5,10,1,DIR_S,5
+ dfb 5,5,0,10,1,DIR_SW,5
+ dfb 5,5,0,5,1,DIR_W,5
+ dfb 5,5,4,4,1,DIR_NW,1
+ dfb 0,0,10,10,1,DIR_SE,10
+ dfb 0,0,19,0,1,DIR_E,19
+ dfb 5,5,5,5,0,$FF,0
+ dfb 5,5,7,6,0,$FF,0
+ dfb 0,0,19,10,0,$FF,0
+ dfb 20,0,0,0,0,$FF,0
+ dfb 0,0,0,11,0,$FF,0
+ dfb $FF
+
+*----------------------------------------------------------
+* Section 11 - line_trace, move_path_clear and los_clear on
+* a built board: trees, water, mountain, bridge, purple and
+* two units. 5 checks per case (found, move, los, mid units,
+* end unit), 12 cases: 60. Then, each re-tracing a case (1
+* found check per trace): the two rule switches (2+3), tree
+* penalties summed over the cells entered (2+3), and a one-
+* step line has no middle (1+2). 73 checks.
+*
+* Board for the section (all else clear, no other units):
+*   TREE (7,3)  WATER (10,3)  MOUNTAIN (13,3)
+*   BRIDGE (4,6)  PURPLE (4,8)
+*   unit 1 at (2,5)  unit 2 at (9,9)
+*----------------------------------------------------------
+test_line_trace
+ MX %11
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr occupant_clear
+ lda #TERR_TREE
+ ldx #7
+ ldy #3
+ jsr set_cell
+ lda #TERR_WATER
+ ldx #10
+ ldy #3
+ jsr set_cell
+ lda #TERR_MOUNTAIN
+ ldx #13
+ ldy #3
+ jsr set_cell
+ lda #TERR_BRIDGE
+ ldx #4
+ ldy #6
+ jsr set_cell
+ lda #TERR_PURPLE
+ ldx #4
+ ldy #8
+ jsr set_cell
+ lda #1
+ ldx #2
+ ldy #5
+ jsr set_occupant
+ lda #2
+ ldx #9
+ ldy #9
+ jsr set_occupant
+ ldx #0                    ; 8 bytes per case
+:case
+ lda tr_cases,x
+ cmp #$FF
+ beq :done
+ stx t_class
+ jsr trace_case            ; loads endpoints, finds, traces
+ ldx t_class
+ lda tr_cases+4,x
+ sta expect
+ lda t_legal
+ jsr check_eq              ; move_path_clear
+ lda tr_cases+5,x
+ sta expect
+ lda t_cost
+ jsr check_eq              ; los_clear
+ lda tr_cases+6,x
+ sta expect
+ lda ln_mid_occ
+ jsr check_eq
+ lda tr_cases+7,x
+ sta expect
+ lda ln_end_occ
+ jsr check_eq
+ txa
+ clc
+ adc #8
+ tax
+ bra :case
+:done
+* Rule switches: the unit at (2,5) on the line (0,5)-(4,5)
+* stops blocking when the rules say units do not block.
+ stz rule_units_block_move
+ stz rule_units_block_los
+ ldx #56                   ; case H: (0,5)-(4,5)
+ stx t_class
+ jsr trace_case
+ lda #1
+ sta expect
+ lda t_legal
+ jsr check_eq              ; may pass through the unit
+ lda t_cost
+ jsr check_eq              ; may fire past the unit
+ ldx #64                   ; case I: (5,5)-(2,5), unit at the far end
+ stx t_class
+ jsr trace_case
+ stz expect
+ lda t_legal
+ jsr check_eq              ; still may not end on a unit
+ lda #1
+ sta rule_units_block_move
+ sta rule_units_block_los
+* Tree penalties add up over the cells entered, far end
+* included. Set them for the test, then put the zeros back.
+ lda #3
+ sta terrain_fuel_penalty+TERR_TREE
+ lda #1
+ sta terrain_move_penalty+TERR_TREE
+ ldx #0                    ; case A: (5,3)-(9,3), one tree between
+ stx t_class
+ jsr trace_case
+ lda #3
+ sta expect
+ lda ln_fuel_pen
+ jsr check_eq
+ lda #1
+ sta expect
+ lda ln_move_pen
+ jsr check_eq
+ ldx #8                    ; case B: (5,3)-(7,3), tree at the far end
+ stx t_class
+ jsr trace_case
+ lda #3
+ sta expect
+ lda ln_fuel_pen
+ jsr check_eq
+ stz terrain_fuel_penalty+TERR_TREE
+ stz terrain_move_penalty+TERR_TREE
+* A one-step line has no cells between.
+ ldx #80                   ; case K2: (0,0)-(1,0)
+ stx t_class
+ jsr trace_case
+ lda #$FF
+ sta expect
+ lda ln_mid_flags
+ jsr check_eq
+ lda #TF_MOVE+TF_FIRE
+ sta expect
+ lda ln_end_flags
+ jsr check_eq
+ rts
+
+* trace_case - Load the endpoints of case t_class, find and
+* trace the line (checking it was found), and leave the
+* verdicts in t_legal (move) and t_cost (los).
+trace_case
+ MX %11
+ ldx t_class
+ lda tr_cases,x
+ sta ln_x0
+ lda tr_cases+1,x
+ sta ln_y0
+ lda tr_cases+2,x
+ sta ln_x1
+ lda tr_cases+3,x
+ sta ln_y1
+ jsr line_find
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq              ; the case is a line
+ jsr line_trace
+ jsr move_path_clear
+ lda #0
+ rol
+ sta t_legal
+ jsr los_clear
+ lda #0
+ rol
+ sta t_cost
+ rts
+
+* x0, y0, x1, y1, expected move clear, los clear, units
+* between, unit at the far end
+tr_cases
+ dfb 5,3,9,3,1,0,0,0       ; A: through a tree: move yes, fire no
+ dfb 5,3,7,3,1,1,0,0       ; B: onto a tree: both fine
+ dfb 8,3,12,3,0,1,0,0      ; C: across water: fire only
+ dfb 8,3,10,3,0,1,0,0      ; D: onto water: fire only
+ dfb 11,3,15,3,0,0,0,0     ; E: through a mountain: neither
+ dfb 4,4,4,7,1,1,0,0       ; F: over a bridge: both
+ dfb 4,7,4,9,0,1,0,0       ; G: through purple: fire only
+ dfb 0,5,4,5,0,0,1,0       ; H: through a unit: neither (rules on)
+ dfb 5,5,2,5,0,1,0,1       ; I: onto a unit: no move, fire fine
+ dfb 9,5,9,10,0,0,1,0      ; J: through a unit, southward
+ dfb 0,0,1,0,1,1,0,0       ; K2: one step, nothing between
+ dfb 0,0,3,3,1,1,0,0       ; K: clear diagonal: both
+ dfb $FF
+
 * percent, injected roll, expected (1 hit / 0 miss)
 rh_cases
  dfb 100,99,1
@@ -1092,7 +1368,7 @@ section_end
  jsr draw_cstr
  lda line_y
  clc
- adc #12
+ adc #10
  sta line_y
  sep $30
  MX %11
@@ -1128,6 +1404,10 @@ s_sec_board  asc 'BOARD CELLS'
              dfb 0
 s_sec_terrain asc 'TERRAIN'
              dfb 0
+s_sec_lfind  asc 'LINE FIND'
+             dfb 0
+s_sec_ltrace asc 'LINE TRACE'
+             dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0
 s_first_fail asc 'FIRST FAILING CHECK ID'
@@ -1137,5 +1417,6 @@ s_return     asc 'PRESS ANY KEY TO RETURN TO TITLE'
 
   put tables
   put board
+  put line
   put rng
   put common

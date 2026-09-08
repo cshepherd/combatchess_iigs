@@ -69,6 +69,7 @@ s_return  asc 'PRESS ANY KEY TO RETURN TO TITLE'
 * further includes.
   put tables
   put board
+  put line
   put rng
 
   put common

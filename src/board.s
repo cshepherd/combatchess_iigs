@@ -255,6 +255,55 @@ board_load
  bne :loop
  rts
 
-* The live board. Part of the game state (spec 30); a save
-* game stores these 220 bytes as they are.
-board ds BOARD_CELLS
+*----------------------------------------------------------
+* Occupancy: which unit stands on each cell, parallel to
+* board. OCC_NONE for empty, otherwise unit id + 1. The unit
+* code keeps it current; line tracing and get_unit_at read it.
+*----------------------------------------------------------
+OCC_NONE = 0
+
+* get_occupant - Occupant of (X, Y).
+* In:  X = x, Y = y (on the board)
+* Out: A = occupant, Z set from A (beq = empty). Preserves
+*      X, Y. Clobbers rt0.
+get_occupant
+ MX %11
+ jsr cell_index
+ phx
+ tax
+ lda occupant,x
+ plx
+ cmp #0
+ rts
+
+* set_occupant - Record occupant A at (X, Y).
+* In:  X = x, Y = y (on the board), A = occupant
+* Preserves X, Y, A. Clobbers rt0, rt1.
+set_occupant
+ MX %11
+ sta rt1
+ jsr cell_index
+ phx
+ tax
+ lda rt1
+ sta occupant,x
+ plx
+ rts
+
+* occupant_clear - Empty every cell. Clobbers A, X.
+occupant_clear
+ MX %11
+ lda #OCC_NONE
+ ldx #0
+:loop
+ sta occupant,x
+ inx
+ cpx #BOARD_CELLS
+ bne :loop
+ rts
+
+* The live board and its occupancy. Part of the game state
+* (spec 30); a save game stores the 220 terrain bytes as
+* they are and rebuilds occupant from the unit list.
+board    ds BOARD_CELLS
+occupant ds BOARD_CELLS
