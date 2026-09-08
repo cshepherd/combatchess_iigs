@@ -6,7 +6,9 @@ The rules specification lives in `combat_chess_iigs_spec-3.md`; the plan for har
 
 ## Status
 
-Milestone 1 in progress. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. The headless rules engine is functionally complete for the printed rules: data tables, board and terrain, line tracing, units, movement, fire, turns with both Shoot Options, chess clocks with pause, and victory, time loss, surrender and stalemate, all with self-tests. Items the manual leaves open are marked UNVERIFIED in the source for milestone 2. Next: loading the ten boards with starting positions, then the debug board display.
+Milestone 1 in progress. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. The headless rules engine is functionally complete for the printed rules: data tables, board and terrain, line tracing, units, movement, fire, turns with both Shoot Options, chess clocks with pause, and victory, time loss, surrender and stalemate, all with self-tests. Items the manual leaves open are marked UNVERIFIED in the source for milestone 2.
+
+The ten original boards and their starting positions have been captured from the Atari game (see `reference/notes/capture_session.md`) and generated into `src/boards.s`. The game part is the milestone 3 debug board: a programmer-art 20 x 11 board on any of the ten boards, playable hot-seat with the keyboard. Arrows or WASD move the cursor, RETURN selects a friendly unit and then confirms a move or a shot, M and F switch between move and fire (legal destinations and targets are highlighted), ESC cancels, E ends the turn, P pauses, X surrenders, the number keys restart on another board (0 is board 10), Q quits to the title.
 
 Press T on the title screen to run the rules self-tests.
 
@@ -47,6 +49,8 @@ Boot `out/combatchess.po` in KEGS, GSplus, or on real hardware. The volume conta
 | `src/move.s` | Movement action: validate and price a move, execute it with fuel, terrain HP and event |
 | `src/fire.s` | Fire action: validate a shot with its odds, execute with ammo, roll, damage, destruction and events |
 | `src/turn.s` | Turns, Shoot Option phases, chess clocks on the tick counter, pause, victory, time loss, surrender, stalemate |
+| `src/dbg.s` | Debug board: programmer-art display, keyboard cursor, highlights, status lines, hot-seat loop |
+| `tools/kegs_key.py` | Pokes keys into the running debug board through the KEGS debug socket, with optional screenshot |
 | `src/rng.s` | Seedable xorshift32 generator, 0-99 roll, `resolve_hit` with injectable roll |
 | `tools/rng_ref.py` | Byte-exact Python mirror of `rng.s` for replay tools and test known answers |
 | `src/shared.s` | Equates shared by every part (launcher entries, page $11 globals) |

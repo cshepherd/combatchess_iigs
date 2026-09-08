@@ -708,7 +708,8 @@ stub_value ds 1
 * leaves its neighbours alone (7), cell_in_bounds on and off
 * the edges (6), cell_step in all eight directions from
 * (5,5) and off three edges (27), board_load copies a full
-* pattern (3). 48 checks.
+* pattern (3), board_load_text decodes every map letter
+* (11). 59 checks.
 *----------------------------------------------------------
 test_board
  MX %11
@@ -886,7 +887,41 @@ test_board
  ldx #4                    ; 20 AND 7
  stx expect
  jsr check_eq
+* board_load_text: the ten map letters across row 0, dots
+* elsewhere; every type decodes and a dot is clear (11).
+ lda #<text_map
+ sta rptr
+ lda #>text_map
+ sta rptr+1
+ jsr board_load_text
+ ldx #0
+:letter
+ stx expect                ; letter n is type n
+ ldy #0
+ jsr get_cell
+ jsr check_eq
+ inx
+ cpx #NUM_TERRAIN
+ bcc :letter
+ ldx #5
+ ldy #6
+ jsr get_cell
+ stz expect
+ jsr check_eq
  rts
+
+text_map
+ asc '.T~=Mwygpb..........'
+ asc '....................'
+ asc '....................'
+ asc '....................'
+ asc '....................'
+ asc '....................'
+ asc '....................'
+ asc '....................'
+ asc '....................'
+ asc '....................'
+ asc '....................'
 
 * count_type - A = terrain type -> A = how many cells hold
 * it. Clobbers X, rt2, rt3.

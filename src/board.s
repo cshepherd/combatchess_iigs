@@ -256,6 +256,37 @@ board_load
  rts
 
 *----------------------------------------------------------
+* board_load_text - Fill the board from 220 map characters
+* at rptr: 11 rows of 20 with no separators, in the letters
+* of the capture checklist (section 16):
+*   . clear  T tree  ~ water  = bridge  M mountain
+*   w white  y yellow  g grey  p purple  b black
+* Any other character becomes clear. Clobbers A, X, Y.
+*----------------------------------------------------------
+board_load_text
+ MX %11
+ ldy #0
+:cell
+ lda (rptr),y
+ ldx #NUM_TERRAIN-1
+:find
+ cmp terrain_chars,x
+ beq :got
+ dex
+ bpl :find
+ ldx #TERR_CLEAR
+:got
+ txa
+ sta board,y
+ iny
+ cpy #BOARD_CELLS
+ bne :cell
+ rts
+
+* One character per terrain type, in TERR_* order.
+terrain_chars asc '.T~=Mwygpb'
+
+*----------------------------------------------------------
 * Occupancy: which unit stands on each cell, parallel to
 * board. OCC_NONE for empty, otherwise unit id + 1. The unit
 * code keeps it current; line tracing and get_unit_at read it.

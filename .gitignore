@@ -13,3 +13,17 @@ __pycache__/
 
 # merlin32 side file (Cadius file-info hints)
 src/_FileInformation.txt
+
+# Atari original game images: copyrighted, keep out of the repo
+reference/atari/*.atr
+reference/atari/*.xex
+reference/atari/*.atx
+reference/atari/*.xfd
+reference/atari/*.dcm
+reference/atari/*.car
+reference/atari/*.rom
+reference/atari/*.zip
+
+# Atari RAM dumps and input recordings hold the copyrighted game program itself
+reference/raw/**/*_ram.dat
+reference/raw/**/*.rec

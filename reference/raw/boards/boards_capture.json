@@ -1,0 +1,142 @@
+{
+ "2": {
+  "options_line": "GAME BOARD IS #02",
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "74",
+   "COLPF2": "C4",
+   "COLPF3": "34",
+   "COLBK": "CA"
+  }
+ },
+ "3": {
+  "options_line": "GAME BOARD IS #03",
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "74",
+   "COLPF2": "C4",
+   "COLPF3": "34",
+   "COLBK": "CA"
+  }
+ },
+ "4": {
+  "options_line": "GAME BOARD IS #04",
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "74",
+   "COLPF2": "C4",
+   "COLPF3": "34",
+   "COLBK": "CA"
+  }
+ },
+ "5": {
+  "options_line": "GAME BOARD IS #05",
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "74",
+   "COLPF2": "C4",
+   "COLPF3": "34",
+   "COLBK": "CA"
+  }
+ },
+ "6": {
+  "options_line": "GAME BOARD IS #06",
+  "hud": [
+   "  19:57 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "56",
+   "COLPF2": "C6",
+   "COLPF3": "34",
+   "COLBK": "0A"
+  }
+ },
+ "7": {
+  "options_line": "GAME BOARD IS #07",
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "1A",
+   "COLPF2": "72",
+   "COLPF3": "34",
+   "COLBK": "0A"
+  }
+ },
+ "8": {
+  "options_line": "GAME BOARD IS #08",
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "1A",
+   "COLPF2": "72",
+   "COLPF3": "34",
+   "COLBK": "0A"
+  }
+ },
+ "9": {
+  "options_line": "GAME BOARD IS #09",
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "54",
+   "COLPF2": "06",
+   "COLPF3": "34",
+   "COLBK": "0A"
+  }
+ },
+ "10": {
+  "options_line": "GAME BOARD IS #10",
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "02",
+   "COLPF2": "02",
+   "COLPF3": "34",
+   "COLBK": "00"
+  }
+ },
+ "1": {
+  "options_line": "GAME BOARD IS #01",
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "colours": {
+   "COLPF0": "00",
+   "COLPF1": "74",
+   "COLPF2": "C4",
+   "COLPF3": "34",
+   "COLBK": "CA"
+  }
+ }
+}

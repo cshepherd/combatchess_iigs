@@ -24,7 +24,12 @@ BINS  = $(addprefix out/,$(PARTS))
 
 # Sources included with PUT by more than one part. Listed as
 # prerequisites so editing them rebuilds every part.
-SHARED = src/shared.s src/common.s src/tables.s src/board.s src/line.s src/units.s src/events.s src/move.s src/rng.s src/fire.s src/turn.s
+SHARED = src/shared.s src/common.s src/tables.s src/board.s src/line.s src/units.s src/events.s src/move.s src/rng.s src/fire.s src/turn.s src/dbg.s src/boards.s
+
+# The ten boards, generated from the reference maps captured from the
+# Atari original (tools/atari_boards_decode.py writes them).
+src/boards.s: tools/gen_boards.py $(wildcard reference/maps/board*.txt)
+	python3 tools/gen_boards.py
 
 .PHONY: all package clean
 all: package

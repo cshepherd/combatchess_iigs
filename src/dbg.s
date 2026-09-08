@@ -1,0 +1,1762 @@
+*----------------------------------------------------------
+* dbg.s - The milestone 3 debug board: programmer-art
+* display, keyboard cursor and a hot-seat game loop over
+* the rules engine (spec sections 25, 26, 41).
+*
+* PUT into game.s after the engine includes. Runs in native
+* mode with 16-bit A/X/Y (MX %00), like common.s, and drops
+* to 8-bit only inside the eng_* wrappers that call the
+* engine. Engine byte variables read from here are masked
+* with #$00FF.
+*
+* Layout: 20 x 11 cells of 16 x 15 pixels fill the top 165
+* rows; three text lines below them. Terrain is a flat
+* colour per type, a unit is a coloured box with its class
+* letter, the cursor a white outline (select), thick box
+* (move) or cross (fire). While a unit is selected, legal
+* destinations get an orange dot and legal targets a cyan
+* outline, with the line of fire dotted to the target under
+* the cursor.
+*
+* Keys: arrows or WASD move the cursor. RETURN selects a
+* friendly unit, then confirms a move or a shot. M and F
+* switch the selected unit between move and fire. ESC drops
+* the selection. E ends the turn, P pauses, X surrenders,
+* Q quits to the title; after the game ends any key quits.
+*----------------------------------------------------------
+CELL_WB    = 8             ; cell width in bytes (16 pixels)
+CELL_H     = 15            ; cell height in rows
+HUD_Y      = 165           ; first row below the board
+SCREEN_ROW = 160           ; bytes per SHR row
+SCREEN     = $2000         ; SHR pixels in bank $E1
+
+MODE_SELECT = 0
+MODE_MOVE   = 1
+MODE_FIRE   = 2
+
+* Palette 0 slots used here.
+COL_BLACK    = 0
+COL_MOUNTAIN = 1
+COL_CLEAR    = 2
+COL_TREE     = 3
+COL_WATER    = 4
+COL_BRIDGE   = 5
+COL_WHITE    = 6
+COL_YELLOW   = 7
+COL_GREY     = 8
+COL_PURPLE   = 9
+COL_RED      = 10
+COL_LTGREY   = 11
+COL_ORANGE   = 12
+COL_CYAN     = 13
+COL_DKRED    = 14
+COL_TEXT     = 15
+
+KEY_LEFT   = $08
+KEY_RIGHT  = $15
+KEY_UP     = $0B
+KEY_DOWN   = $0A
+KEY_RETURN = $0D
+KEY_ESC    = $1B
+KEY_SPACE  = $20
+
+dbg_palette
+ dw $0000,$0555,$05C3,$0261,$026E,$0A63,$0EEE,$0FE3
+ dw $0999,$093B,$0D22,$0BBB,$0F92,$04DE,$0800,$0FFF
+
+* Terrain colour by TERR_* type.
+terrain_colour dfb COL_CLEAR,COL_TREE,COL_WATER,COL_BRIDGE,COL_MOUNTAIN
+               dfb COL_WHITE,COL_YELLOW,COL_GREY,COL_PURPLE,COL_BLACK
+
+* Box and letter colours by side.
+side_box    dfb COL_RED,COL_BLACK
+side_letter dfb COL_TEXT,COL_YELLOW
+class_letter asc 'CTA'
+
+*----------------------------------------------------------
+* dbg_init - Palette and display state. Native 16-bit.
+*----------------------------------------------------------
+dbg_init
+ MX %00
+ ldx #$001E
+:pal
+ lda dbg_palette,x
+ stal $E19E00,x
+ dex
+ dex
+ bpl :pal
+ stz cur_x
+ stz cur_y
+ stz mode
+ lda #$FF
+ sta sel_unit
+ stz quit
+ stz over_shown
+ lda #$FFFF
+ sta last_sec
+ lda #s_hint
+ sta msg_ptr
+ lda #1
+ sta dirty
+ rts
+
+*----------------------------------------------------------
+* dbg_run - The loop: redraw when something changed, keep
+* the clock line current, read keys. Returns when the
+* player quits. Native 16-bit.
+*----------------------------------------------------------
+dbg_run
+ MX %00
+:loop
+ lda dirty
+ beq :clock
+ stz dirty
+ jsr draw_all
+:clock
+ jsr update_clock
+ jsr wait_vbl
+ lda inject_key            ; a debugger can poke a key here
+ beq :keyboard
+ stz inject_key
+ bra :key
+:keyboard
+ sep #$20
+ MX %10
+ lda $C000
+ bpl :nokey
+ sta $C010
+ and #$7F
+ rep #$20
+ MX %00
+ and #$00FF
+:key
+ jsr handle_key
+ lda quit
+ beq :loop
+ rts
+:nokey
+ rep #$20
+ MX %00
+ bra :loop
+
+*----------------------------------------------------------
+* update_clock - Once a frame: let the engine notice a
+* timeout, then redraw the top line when the displayed
+* second changes.
+*----------------------------------------------------------
+update_clock
+ MX %00
+ jsr eng_clock_check
+ jsr note_game_over
+ lda active_side
+ and #$00FF
+ tax
+ jsr eng_clock_remaining   ; clk_min / clk_sec
+ lda clk_sec
+ cmp last_sec
+ beq :same
+ sta last_sec
+ jsr draw_hud1
+:same
+ rts
+
+* note_game_over - The first time game_result is set, show
+* the result and mark the display dirty.
+note_game_over
+ MX %00
+ lda game_result
+ and #$00FF
+ beq :done
+ lda over_shown
+ bne :done
+ inc over_shown
+ jsr build_result_msg
+ lda #1
+ sta dirty
+:done
+ rts
+
+*----------------------------------------------------------
+* handle_key - A = key. Native 16-bit.
+*----------------------------------------------------------
+handle_key
+ MX %00
+ sta key_code
+ lda game_result
+ and #$00FF
+ beq :playing
+ lda #1
+ sta quit                  ; any key after the end
+ rts
+:playing
+ ldx #0
+:scan
+ lda key_table,x
+ and #$00FF
+ beq :unknown
+ cmp key_code
+ beq :found
+ inx
+ inx
+ inx
+ bra :scan
+:found
+ lda key_table+1,x         ; handler address (2 bytes)
+ sta key_vec
+ jmp (key_vec)
+:unknown
+ rts
+
+* key, handler address. Zero key ends the table.
+key_table
+ dfb KEY_LEFT
+ da k_left
+ dfb 'A'
+ da k_left
+ dfb 'a'
+ da k_left
+ dfb KEY_RIGHT
+ da k_right
+ dfb 'D'
+ da k_right
+ dfb 'd'
+ da k_right
+ dfb KEY_UP
+ da k_up
+ dfb 'W'
+ da k_up
+ dfb 'w'
+ da k_up
+ dfb KEY_DOWN
+ da k_down
+ dfb 'S'
+ da k_surrender_or_down
+ dfb 's'
+ da k_surrender_or_down
+ dfb KEY_RETURN
+ da k_confirm
+ dfb KEY_SPACE
+ da k_confirm
+ dfb 'M'
+ da k_move_mode
+ dfb 'm'
+ da k_move_mode
+ dfb 'F'
+ da k_fire_mode
+ dfb 'f'
+ da k_fire_mode
+ dfb KEY_ESC
+ da k_cancel
+ dfb 'E'
+ da k_end_turn
+ dfb 'e'
+ da k_end_turn
+ dfb 'P'
+ da k_pause
+ dfb 'p'
+ da k_pause
+ dfb 'X'
+ da k_surrender
+ dfb 'x'
+ da k_surrender
+ dfb 'Q'
+ da k_quit
+ dfb 'q'
+ da k_quit
+ dfb '1'
+ da k_board
+ dfb '2'
+ da k_board
+ dfb '3'
+ da k_board
+ dfb '4'
+ da k_board
+ dfb '5'
+ da k_board
+ dfb '6'
+ da k_board
+ dfb '7'
+ da k_board
+ dfb '8'
+ da k_board
+ dfb '9'
+ da k_board
+ dfb '0'
+ da k_board
+ dfb 0
+
+*----------------------------------------------------------
+* k_board - a digit: restart on that board (0 = board 10).
+* Boards not captured yet are refused with a message.
+*----------------------------------------------------------
+k_board
+ MX %00
+ lda key_code
+ sec
+ sbc #'0'
+ bne :num
+ lda #10
+:num
+ sta tmp
+ lda opt_board
+ and #$00FF
+ sta tmp2                  ; to restore if the board is missing
+ lda tmp
+ sep #$20
+ MX %10
+ sta opt_board
+ rep #$20
+ MX %00
+ jsr eng_setup_game
+ bcs :restarted
+ lda tmp2
+ sep #$20
+ MX %10
+ sta opt_board
+ rep #$20
+ MX %00
+ lda #s_no_board
+ jmp set_msg
+:restarted
+ jsr dbg_init
+ lda #s_new_board
+ jmp set_msg
+
+eng_setup_game
+ MX %00
+ sep #$30
+ MX %11
+ jsr setup_game
+ rep #$30
+ MX %00
+ rts
+
+k_left
+ MX %00
+ lda cur_x
+ beq :edge
+ dec cur_x
+:edge
+ jmp mark_dirty
+k_right
+ MX %00
+ lda cur_x
+ cmp #BOARD_W-1
+ bcs :edge
+ inc cur_x
+:edge
+ jmp mark_dirty
+k_up
+ MX %00
+ lda cur_y
+ beq :edge
+ dec cur_y
+:edge
+ jmp mark_dirty
+k_down
+ MX %00
+ lda cur_y
+ cmp #BOARD_H-1
+ bcs :edge
+ inc cur_y
+:edge
+ jmp mark_dirty
+
+* S doubles as "down" for WASD; surrender is X.
+k_surrender_or_down
+ MX %00
+ jmp k_down
+
+mark_dirty
+ MX %00
+ lda #1
+ sta dirty
+ rts
+
+*----------------------------------------------------------
+* k_confirm - RETURN: select, move or fire by mode.
+*----------------------------------------------------------
+k_confirm
+ MX %00
+ lda mode
+ beq :select
+ cmp #MODE_MOVE
+ beq :move
+ jmp do_fire
+:select
+ jmp do_select
+:move
+ jmp do_move
+
+do_select
+ MX %00
+ ldx cur_x
+ ldy cur_y
+ jsr eng_get_unit_at
+ bcs :unit
+ lda #s_no_unit_here
+ jmp set_msg
+:unit
+ sta sel_tmp
+ tax
+ lda unit_side,x
+ and #$00FF
+ sta tmp
+ lda active_side
+ and #$00FF
+ cmp tmp
+ beq :ours
+ lda #s_not_yours
+ jmp set_msg
+:ours
+ lda sel_tmp
+ sta sel_unit
+ lda #MODE_MOVE
+ sta mode
+ lda #s_move_hint
+ jmp set_msg
+
+do_move
+ MX %00
+ lda sel_unit
+ ldx cur_x
+ ldy cur_y
+ jsr eng_turn_move
+ bcs :moved
+ jsr reason_mv
+ jmp set_msg
+:moved
+ lda #MODE_SELECT
+ sta mode
+ lda #$FF
+ sta sel_unit
+ lda #s_moved
+ jsr set_msg
+ jsr note_game_over
+ jmp note_turn_change
+
+do_fire
+ MX %00
+ ldx cur_x
+ ldy cur_y
+ jsr eng_get_unit_at
+ bcs :target
+ lda #s_no_target_here
+ jmp set_msg
+:target
+ tax
+ lda sel_unit
+ jsr eng_turn_fire
+ bcs :fired
+ jsr reason_fr
+ jmp set_msg
+:fired
+ jsr build_shot_msg
+ jsr note_game_over
+ lda #1
+ sta dirty
+ rts
+
+* note_turn_change - after a move the engine may have ended
+* the turn by itself; say so.
+note_turn_change
+ MX %00
+ lda active_side
+ and #$00FF
+ cmp shown_side
+ beq :same
+ sta shown_side
+ lda #s_turn_over
+ jsr set_msg
+:same
+ rts
+
+k_move_mode
+ MX %00
+ jsr need_selection
+ bcc :done
+ lda #MODE_MOVE
+ sta mode
+ lda #s_move_hint
+ jmp set_msg
+:done
+ rts
+
+k_fire_mode
+ MX %00
+ jsr need_selection
+ bcc :done
+ lda #MODE_FIRE
+ sta mode
+ lda #s_fire_hint
+ jmp set_msg
+:done
+ rts
+
+* need_selection - a unit must be selected; if none, try
+* the one under the cursor. Carry set = there is one.
+need_selection
+ MX %00
+ lda sel_unit
+ cmp #$FF
+ bne :have
+ jsr do_select
+ lda sel_unit
+ cmp #$FF
+ bne :have
+ clc
+ rts
+:have
+ sec
+ rts
+
+k_cancel
+ MX %00
+ lda #MODE_SELECT
+ sta mode
+ lda #$FF
+ sta sel_unit
+ lda #s_hint
+ jmp set_msg
+
+k_end_turn
+ MX %00
+ jsr eng_turn_end
+ lda #MODE_SELECT
+ sta mode
+ lda #$FF
+ sta sel_unit
+ lda active_side
+ and #$00FF
+ sta shown_side
+ lda #s_turn_over
+ jsr set_msg
+ jmp note_game_over
+
+k_pause
+ MX %00
+ lda paused
+ and #$00FF
+ bne :resume
+ jsr eng_turn_pause
+ lda #s_paused
+ jmp set_msg
+:resume
+ jsr eng_turn_resume
+ lda #s_resumed
+ jmp set_msg
+
+k_surrender
+ MX %00
+ lda active_side
+ and #$00FF
+ tax
+ jsr eng_surrender
+ jmp note_game_over
+
+k_quit
+ MX %00
+ lda #1
+ sta quit
+ rts
+
+* set_msg - A = C string for the bottom line; redraw.
+set_msg
+ MX %00
+ sta msg_ptr
+ lda #1
+ sta dirty
+ rts
+
+*----------------------------------------------------------
+* Messages
+*----------------------------------------------------------
+
+* reason_mv / reason_fr - A = MV_* / FR_* / TN_* code ->
+* A = its text.
+reason_mv
+ MX %00
+ cmp #$80
+ bcs reason_tn
+ asl
+ tax
+ lda mv_reasons,x
+ rts
+reason_fr
+ MX %00
+ cmp #$80
+ bcs reason_tn
+ asl
+ tax
+ lda fr_reasons,x
+ rts
+reason_tn
+ MX %00
+ and #$7F
+ asl
+ tax
+ lda tn_reasons,x
+ rts
+
+mv_reasons da s_ok,s_r_no_unit,s_r_not_line,s_r_too_far,s_r_blocked,s_r_no_fuel
+fr_reasons da s_ok,s_r_no_unit,s_r_no_target,s_r_not_line,s_r_range,s_r_blocked,s_r_no_ammo,s_r_already
+tn_reasons da s_r_over,s_r_not_yours,s_r_no_moves,s_r_no_phase
+
+* build_shot_msg - "HIT  63 < 64" / "MISS 70 >= 64" /
+* "DESTROYED  12 < 64" into msg_buf from fr_*.
+build_shot_msg
+ MX %00
+ jsr lb_reset
+ lda fr_outcome
+ and #$00FF
+ beq :miss
+ cmp #FR_KILL
+ beq :kill
+ lda #s_hit
+ bra :word
+:kill
+ lda #s_destroyed
+ bra :word
+:miss
+ lda #s_miss
+:word
+ jsr lb_str
+ lda fr_roll
+ and #$00FF
+ ldx #3
+ jsr lb_dec
+ lda fr_outcome
+ and #$00FF
+ beq :ge
+ lda #s_lt
+ bra :cmp
+:ge
+ lda #s_ge
+:cmp
+ jsr lb_str
+ lda fr_chance
+ and #$00FF
+ ldx #3
+ jsr lb_dec
+ jsr lb_end
+ lda #line_buf
+ jmp set_msg_copy
+
+* build_result_msg - "RED WINS: CRUISER DESTROYED" etc.
+build_result_msg
+ MX %00
+ jsr lb_reset
+ lda game_result
+ and #$00FF
+ cmp #RESULT_STALEMATE
+ bne :winner
+ lda #s_stalemate
+ jsr lb_str
+ bra :end
+:winner
+ dec                       ; side that won
+ asl
+ tax
+ lda side_names,x
+ jsr lb_str
+ lda #s_wins
+ jsr lb_str
+ lda result_reason
+ and #$00FF
+ asl
+ tax
+ lda reason_names,x
+ jsr lb_str
+:end
+ lda #s_any_key
+ jsr lb_str
+ jsr lb_end
+ lda #line_buf
+ jmp set_msg_copy
+
+* set_msg_copy - the line builder's buffer is reused by the
+* HUD, so composed messages are copied to msg_buf first.
+set_msg_copy
+ MX %00
+ ldx #0
+:copy
+ lda line_buf,x
+ sta msg_buf,x
+ and #$00FF
+ beq :done
+ inx
+ bra :copy
+:done
+ lda #msg_buf
+ jmp set_msg
+
+side_names   da s_red,s_black
+reason_names da s_ok,s_by_cruiser,s_by_time,s_by_surrender,s_by_stalemate
+
+*----------------------------------------------------------
+* Drawing
+*----------------------------------------------------------
+draw_all
+ MX %00
+ jsr eng_events_clear      ; the debug board reads state, not events
+ jsr draw_board
+ jsr draw_units
+ jsr draw_highlights
+ jsr draw_cursor
+ jsr draw_hud
+ rts
+
+* draw_board - every cell in its terrain colour.
+draw_board
+ MX %00
+ stz cy
+:row
+ stz cx
+:col
+ lda cy
+ asl
+ asl
+ sta tmp
+ asl
+ asl
+ clc
+ adc tmp                   ; cy*20
+ clc
+ adc cx
+ tax
+ lda board,x
+ and #$00FF
+ tax
+ lda terrain_colour,x
+ jsr set_fill_colour
+ jsr cell_addr
+ lda #CELL_WB
+ sta fr_w
+ lda #CELL_H
+ sta fr_h
+ jsr fill_rect
+ inc cx
+ lda cx
+ cmp #BOARD_W
+ bcc :col
+ inc cy
+ lda cy
+ cmp #BOARD_H
+ bcc :row
+ rts
+
+* draw_units - a box and a class letter for every living unit.
+draw_units
+ MX %00
+ stz uid
+:next
+ ldx uid
+ lda unit_flags,x
+ and #$0080
+ bne :paint
+ jmp :skip
+:paint
+ lda unit_x,x
+ and #$00FF
+ sta cx
+ lda unit_y,x
+ and #$00FF
+ sta cy
+ lda unit_side,x
+ and #$00FF
+ sta side_tmp
+ tax
+ lda side_box,x
+ jsr set_fill_colour
+ jsr cell_addr
+ lda fr_addr
+ clc
+ adc #SCREEN_ROW+1
+ sta fr_addr
+ lda #CELL_WB-2
+ sta fr_w
+ lda #CELL_H-2
+ sta fr_h
+ jsr fill_rect
+ ldx uid
+ lda unit_class,x
+ and #$00FF
+ tax
+ lda class_letter,x
+ and #$00FF
+ sta glyph_buf
+ stz glyph_buf+1
+ ldx side_tmp
+ lda side_box,x
+ and #$00FF
+ pha
+ lda side_letter,x
+ and #$00FF
+ plx
+ jsr set_colors
+ lda #glyph_buf
+ sta str_ptr
+ lda cx
+ asl
+ asl
+ asl
+ asl
+ clc
+ adc #5
+ tax
+ lda cy
+ asl
+ asl
+ asl
+ asl
+ sec
+ sbc cy
+ clc
+ adc #11
+ tay
+ jsr draw_cstr
+:skip
+ inc uid
+ lda uid
+ cmp #MAX_UNITS
+ bcs :done
+ jmp :next
+:done
+ rts
+
+* draw_highlights - with a unit selected: legal destinations
+* in move mode, legal targets and the line of fire in fire
+* mode.
+draw_highlights
+ MX %00
+ lda sel_unit
+ cmp #$FF
+ beq :done
+ lda mode
+ cmp #MODE_MOVE
+ beq :moves
+ cmp #MODE_FIRE
+ beq :targets
+:done
+ rts
+:moves
+ jmp hl_moves
+:targets
+ jmp hl_targets
+
+* hl_moves - walk the eight rays from the unit and dot every
+* square move_validate accepts.
+hl_moves
+ MX %00
+ stz dir
+:dir
+ ldx sel_unit
+ lda unit_x,x
+ and #$00FF
+ sta hx
+ lda unit_y,x
+ and #$00FF
+ sta hy
+ stz dist
+:step
+ ldx dir
+ lda dir_dx,x
+ and #$00FF
+ jsr sign_extend
+ clc
+ adc hx
+ sta hx
+ lda dir_dy,x
+ and #$00FF
+ jsr sign_extend
+ clc
+ adc hy
+ sta hy
+ lda hx
+ cmp #BOARD_W
+ bcs :off
+ lda hy
+ cmp #BOARD_H
+ bcs :off
+ lda sel_unit
+ ldx hx
+ ldy hy
+ jsr eng_move_validate
+ bcc :no
+ lda hx
+ sta cx
+ lda hy
+ sta cy
+ lda #COL_ORANGE
+ jsr draw_dot
+:no
+ inc dist
+ lda dist
+ cmp #MAX_MOVE_DIST
+ bcs :off
+ jmp :step
+:off
+ inc dir
+ lda dir
+ cmp #NUM_DIRS
+ bcs :done
+ jmp :dir
+:done
+ rts
+
+* hl_targets - outline every enemy fire_validate accepts; if
+* the cursor is on one, dot the squares between.
+hl_targets
+ MX %00
+ stz uid
+:next
+ ldx uid
+ lda unit_flags,x
+ and #$0080
+ bne :test
+ jmp :skip
+:test
+ lda sel_unit
+ jsr eng_fire_validate
+ bcc :skip
+ ldx uid
+ lda unit_x,x
+ and #$00FF
+ sta cx
+ lda unit_y,x
+ and #$00FF
+ sta cy
+ lda #COL_CYAN
+ jsr draw_box1
+ lda cx
+ cmp cur_x
+ bne :skip
+ lda cy
+ cmp cur_y
+ bne :skip
+ jsr draw_fire_line
+:skip
+ inc uid
+ lda uid
+ cmp #MAX_UNITS
+ bcs :done
+ jmp :next
+:done
+ rts
+
+* draw_fire_line - after a successful fire_validate, ln_*
+* describe the line: dot cells 1..dist-1 from the attacker.
+draw_fire_line
+ MX %00
+ lda ln_x0
+ and #$00FF
+ sta hx
+ lda ln_y0
+ and #$00FF
+ sta hy
+ lda ln_dist
+ and #$00FF
+ sta dist
+ lda ln_dir
+ and #$00FF
+ sta dir
+:step
+ dec dist
+ beq :done
+ ldx dir
+ lda dir_dx,x
+ and #$00FF
+ jsr sign_extend
+ clc
+ adc hx
+ sta hx
+ lda dir_dy,x
+ and #$00FF
+ jsr sign_extend
+ clc
+ adc hy
+ sta hy
+ lda hx
+ sta cx
+ lda hy
+ sta cy
+ lda #COL_CYAN
+ jsr draw_dot
+ bra :step
+:done
+ rts
+
+* sign_extend - A = a byte -> A = the same value as a signed
+* 16-bit number.
+sign_extend
+ MX %00
+ cmp #$0080
+ bcc :pos
+ ora #$FF00
+:pos
+ rts
+
+* draw_cursor - by mode: outline, thick box, or cross.
+draw_cursor
+ MX %00
+ lda cur_x
+ sta cx
+ lda cur_y
+ sta cy
+ lda mode
+ beq :select
+ cmp #MODE_MOVE
+ beq :move
+ lda #COL_TEXT
+ jmp draw_cross
+:select
+ lda #COL_TEXT
+ jmp draw_box1
+:move
+ lda #COL_TEXT
+ jmp draw_box2
+
+* draw_box1 / draw_box2 - outline the cell at (cx, cy) in
+* colour A, one or two bytes thick.
+draw_box1
+ MX %00
+ ldx #1
+ bra draw_box
+draw_box2
+ MX %00
+ ldx #2
+draw_box
+ MX %00
+ stx thick
+ jsr set_fill_colour
+ jsr cell_addr
+ lda fr_addr
+ sta box_addr
+ lda #CELL_WB
+ sta fr_w
+ lda thick
+ sta fr_h
+ jsr fill_rect             ; top
+ lda #CELL_H
+ sec
+ sbc thick
+ jsr rows_to_offset
+ clc
+ adc box_addr
+ sta fr_addr
+ jsr fill_rect             ; bottom
+ lda box_addr
+ sta fr_addr
+ lda thick
+ sta fr_w
+ lda #CELL_H
+ sta fr_h
+ jsr fill_rect             ; left
+ lda box_addr
+ clc
+ adc #CELL_WB
+ sec
+ sbc thick
+ sta fr_addr
+ jmp fill_rect             ; right
+
+* draw_cross - a + through the cell at (cx, cy) in colour A.
+draw_cross
+ MX %00
+ jsr set_fill_colour
+ jsr cell_addr
+ lda fr_addr
+ sta box_addr
+ lda #7
+ jsr rows_to_offset
+ clc
+ adc box_addr
+ sta fr_addr
+ lda #CELL_WB
+ sta fr_w
+ lda #1
+ sta fr_h
+ jsr fill_rect             ; horizontal bar
+ lda box_addr
+ clc
+ adc #3
+ sta fr_addr
+ lda #2
+ sta fr_w
+ lda #CELL_H
+ sta fr_h
+ jmp fill_rect             ; vertical bar
+
+* draw_dot - a small mark in the middle of (cx, cy) in
+* colour A.
+draw_dot
+ MX %00
+ jsr set_fill_colour
+ jsr cell_addr
+ lda fr_addr
+ clc
+ adc #6*SCREEN_ROW+3
+ sta fr_addr
+ lda #2
+ sta fr_w
+ lda #3
+ sta fr_h
+ jmp fill_rect
+
+* rows_to_offset - A = rows -> A = rows * SCREEN_ROW.
+rows_to_offset
+ MX %00
+ sta tmp
+ asl
+ asl
+ asl
+ asl
+ asl                       ; *32
+ sta tmp2
+ lda tmp
+ asl
+ asl
+ asl
+ asl
+ asl
+ asl
+ asl                       ; *128
+ clc
+ adc tmp2
+ rts
+
+* cell_addr - fr_addr = screen offset of the top-left byte
+* of cell (cx, cy).
+cell_addr
+ MX %00
+ lda cy
+ asl
+ asl
+ asl
+ asl
+ sec
+ sbc cy                    ; cy*15 rows
+ jsr rows_to_offset
+ clc
+ adc #SCREEN
+ sta fr_addr
+ lda cx
+ asl
+ asl
+ asl                       ; cx*8 bytes
+ clc
+ adc fr_addr
+ sta fr_addr
+ rts
+
+* set_fill_colour - A = palette index -> fr_col = the byte
+* that paints two pixels of it.
+set_fill_colour
+ MX %00
+ and #$000F
+ sta tmp
+ asl
+ asl
+ asl
+ asl
+ ora tmp
+ sta fr_col
+ rts
+
+* fill_rect - paint fr_h rows of fr_w bytes from screen
+* offset fr_addr in bank $E1 with fr_col.
+fill_rect
+ MX %00
+ lda fr_h
+ sta tmp_h
+ lda fr_addr
+ sta tmp_a
+:row
+ ldx tmp_a
+ ldy fr_w
+ sep #$20
+ MX %10
+ lda fr_col
+:byte
+ stal $E10000,x
+ inx
+ dey
+ bne :byte
+ rep #$20
+ MX %00
+ lda tmp_a
+ clc
+ adc #SCREEN_ROW
+ sta tmp_a
+ dec tmp_h
+ bne :row
+ rts
+
+*----------------------------------------------------------
+* HUD: three text lines under the board.
+*----------------------------------------------------------
+* HUD_ADDR - screen offset of the first HUD row. Merlin has
+* no operator precedence: this evaluates left to right.
+HUD_ADDR = HUD_Y*SCREEN_ROW+SCREEN
+
+draw_hud
+ MX %00
+ lda #HUD_ADDR
+ sta fr_addr
+ lda #SCREEN_ROW
+ sta fr_w
+ lda #200-HUD_Y
+ sta fr_h
+ lda #COL_BLACK
+ jsr set_fill_colour
+ jsr fill_rect
+ jsr draw_hud1
+ jsr draw_hud2
+ jmp draw_hud3
+
+* draw_hud1 - "RED TO MOVE  09:58  MOVES 1/3  FIRE OR MOVE",
+* or the pause, or the result.
+draw_hud1
+ MX %00
+ lda #HUD_ADDR
+ sta fr_addr
+ lda #SCREEN_ROW
+ sta fr_w
+ lda #11
+ sta fr_h
+ lda #COL_BLACK
+ jsr set_fill_colour
+ jsr fill_rect
+ jsr lb_reset
+ lda game_result
+ and #$00FF
+ beq :playing
+ lda #s_game_over
+ jsr lb_str
+ jmp :draw
+:playing
+ lda #s_board_tag
+ jsr lb_str
+ lda opt_board
+ and #$00FF
+ ldx #2
+ jsr lb_dec
+ lda #s_two_spaces
+ jsr lb_str
+ lda active_side
+ and #$00FF
+ asl
+ tax
+ lda side_names,x
+ jsr lb_str
+ lda #s_to_move
+ jsr lb_str
+ lda clk_min
+ ldx #2
+ jsr lb_dec
+ lda #s_colon
+ jsr lb_str
+ lda clk_sec
+ jsr lb_dec2
+ lda #s_moves
+ jsr lb_str
+ lda moves_used
+ and #$00FF
+ ldx #1
+ jsr lb_dec
+ lda #s_slash
+ jsr lb_str
+ lda opt_moves_per_turn
+ and #$00FF
+ ldx #1
+ jsr lb_dec
+ lda #s_two_spaces
+ jsr lb_str
+ lda paused
+ and #$00FF
+ beq :phase
+ lda #s_paused_tag
+ jsr lb_str
+ jmp :draw
+:phase
+ lda turn_phase
+ and #$00FF
+ asl
+ tax
+ lda phase_names,x
+ jsr lb_str
+:draw
+ jsr lb_end
+ lda active_side
+ and #$00FF
+ tax
+ lda side_hud_colour,x
+ and #$00FF
+ ldx #COL_BLACK
+ jsr set_colors
+ lda #line_buf
+ sta str_ptr
+ ldx #2
+ ldy #HUD_Y+10
+ jmp draw_cstr
+
+side_hud_colour dfb COL_RED,COL_YELLOW
+phase_names da s_ph_any,s_ph_fire,s_ph_move
+
+* draw_hud2 - the selected unit (else the one under the
+* cursor): "TANK  SQ=12 GM=24 AM=16 FL=240", plus the fuel
+* after the move the cursor proposes (spec 25.1).
+draw_hud2
+ MX %00
+ lda sel_unit
+ cmp #$FF
+ bne :have
+ ldx cur_x
+ ldy cur_y
+ jsr eng_get_unit_at
+ bcs :have
+ lda #s_no_unit
+ sta str_ptr
+ jmp :draw
+:have
+ sta hud_unit
+ jsr lb_reset
+ ldx hud_unit
+ lda unit_class,x
+ and #$00FF
+ asl
+ tax
+ lda class_short_ptrs,x
+ jsr lb_str
+ lda #s_sq
+ jsr lb_str
+ ldx hud_unit
+ lda unit_terr_hp,x
+ and #$00FF
+ ldx #2
+ jsr lb_dec
+ lda #s_gm
+ jsr lb_str
+ ldx hud_unit
+ lda unit_hp,x
+ and #$00FF
+ ldx #2
+ jsr lb_dec
+ lda #s_am
+ jsr lb_str
+ ldx hud_unit
+ lda unit_ammo,x
+ and #$00FF
+ ldx #2
+ jsr lb_dec
+ lda #s_fl
+ jsr lb_str
+ ldx hud_unit
+ lda unit_fuel,x
+ and #$00FF
+ ldx #3
+ jsr lb_dec
+ lda mode
+ cmp #MODE_MOVE
+ bne :end
+ lda sel_unit
+ ldx cur_x
+ ldy cur_y
+ jsr eng_move_validate
+ bcc :end
+ lda #s_arrow_fl
+ jsr lb_str
+ lda mv_fuel_after
+ and #$00FF
+ ldx #3
+ jsr lb_dec
+:end
+ jsr lb_end
+ lda #line_buf
+ sta str_ptr
+:draw
+ lda #COL_TEXT
+ ldx #COL_BLACK
+ jsr set_colors
+ ldx #2
+ ldy #HUD_Y+21
+ jmp draw_cstr
+
+* draw_hud3 - the message line.
+draw_hud3
+ MX %00
+ lda #COL_LTGREY
+ ldx #COL_BLACK
+ jsr set_colors
+ lda msg_ptr
+ sta str_ptr
+ ldx #2
+ ldy #HUD_Y+32
+ jmp draw_cstr
+
+*----------------------------------------------------------
+* Line builder: composes a C string in line_buf.
+*----------------------------------------------------------
+lb_reset
+ MX %00
+ stz lb_pos
+ rts
+
+* lb_str - append the C string at A. Uses rptr (direct
+* page) for the indirect read; nothing in the engine is
+* running while the line is built.
+lb_str
+ MX %00
+ sta rptr
+ ldy #0
+ ldx lb_pos
+ sep #$20
+ MX %10
+:copy
+ lda (rptr),y
+ beq :done
+ sta line_buf,x
+ inx
+ iny
+ bra :copy
+:done
+ rep #$20
+ MX %00
+ stx lb_pos
+ rts
+
+* lb_dec - append A as decimal, right-justified in X chars.
+lb_dec
+ MX %00
+ stx lb_width
+ pha
+ lda #line_buf
+ clc
+ adc lb_pos
+ sta str_ptr
+ pla
+ ldx lb_width
+ jsr fmt_u16
+ lda lb_pos
+ clc
+ adc lb_width
+ sta lb_pos
+ rts
+
+* lb_dec2 - append A as two digits with a leading zero
+* (seconds).
+lb_dec2
+ MX %00
+ cmp #10
+ bcs :two
+ pha
+ lda #s_zero
+ jsr lb_str
+ pla
+ ldx #1
+ jmp lb_dec
+:two
+ ldx #2
+ jmp lb_dec
+
+lb_end
+ MX %00
+ ldx lb_pos
+ sep #$20
+ MX %10
+ lda #0
+ sta line_buf,x
+ rep #$20
+ MX %00
+ rts
+
+*----------------------------------------------------------
+* Engine wrappers: 16-bit in, 8-bit call, 16-bit out. A
+* results come back masked; carry passes straight through.
+*----------------------------------------------------------
+eng_turn_move
+ MX %00
+ sep #$30
+ MX %11
+ jsr turn_move
+ rep #$30
+ MX %00
+ and #$00FF
+ rts
+
+eng_turn_fire
+ MX %00
+ sep #$30
+ MX %11
+ jsr turn_fire
+ rep #$30
+ MX %00
+ and #$00FF
+ rts
+
+eng_move_validate
+ MX %00
+ sep #$30
+ MX %11
+ jsr move_validate
+ rep #$30
+ MX %00
+ and #$00FF
+ rts
+
+eng_fire_validate
+ MX %00
+ sep #$30
+ MX %11
+ jsr fire_validate
+ rep #$30
+ MX %00
+ and #$00FF
+ rts
+
+eng_get_unit_at
+ MX %00
+ sep #$30
+ MX %11
+ jsr get_unit_at
+ rep #$30
+ MX %00
+ and #$00FF
+ rts
+
+eng_turn_end
+ MX %00
+ sep #$30
+ MX %11
+ jsr turn_end
+ rep #$30
+ MX %00
+ rts
+
+eng_turn_pause
+ MX %00
+ sep #$30
+ MX %11
+ jsr turn_pause
+ rep #$30
+ MX %00
+ rts
+
+eng_turn_resume
+ MX %00
+ sep #$30
+ MX %11
+ jsr turn_resume
+ rep #$30
+ MX %00
+ rts
+
+eng_surrender
+ MX %00
+ sep #$30
+ MX %11
+ jsr game_surrender
+ rep #$30
+ MX %00
+ rts
+
+eng_clock_check
+ MX %00
+ sep #$30
+ MX %11
+ jsr clock_check
+ rep #$30
+ MX %00
+ rts
+
+eng_events_clear
+ MX %00
+ sep #$30
+ MX %11
+ jsr events_clear
+ rep #$30
+ MX %00
+ rts
+
+* eng_clock_remaining - X = side -> clk_min, clk_sec.
+eng_clock_remaining
+ MX %00
+ sep #$30
+ MX %11
+ jsr clock_remaining
+ jsr ticks_to_mmss
+ rep #$30
+ MX %00
+ rts
+
+*----------------------------------------------------------
+* Strings
+*----------------------------------------------------------
+* Lines must stay under about 40 characters to fit 320
+* pixels of Shaston 8.
+class_short_ptrs da s_cruiser,s_tank,s_car
+s_cruiser       asc 'CRUISER'
+                dfb 0
+s_tank          asc 'TANK'
+                dfb 0
+s_car           asc 'CAR'
+                dfb 0
+s_hint          asc 'RETURN SELECT  E END  P PAUSE  1-0 BOARD'
+                dfb 0
+s_board_tag     asc 'B'
+                dfb 0
+s_no_board      asc 'THAT BOARD IS NOT CAPTURED YET'
+                dfb 0
+s_new_board     asc 'NEW GAME  (RETURN SELECT  E END  Q QUIT)'
+                dfb 0
+s_move_hint     asc 'MOVE: RETURN ON A SQUARE  F FIRE  ESC'
+                dfb 0
+s_fire_hint     asc 'FIRE: RETURN ON A TARGET  M MOVE  ESC'
+                dfb 0
+s_no_unit_here  asc 'NO UNIT THERE'
+                dfb 0
+s_not_yours     asc 'NOT YOUR UNIT'
+                dfb 0
+s_no_target_here asc 'NO TARGET THERE'
+                dfb 0
+s_moved         asc 'MOVED'
+                dfb 0
+s_turn_over     asc 'TURN OVER'
+                dfb 0
+s_paused        asc 'PAUSED  (P TO RESUME)'
+                dfb 0
+s_resumed       asc 'RESUMED'
+                dfb 0
+s_ok            asc 'OK'
+                dfb 0
+s_r_no_unit     asc 'NO SUCH UNIT'
+                dfb 0
+s_r_not_line    asc 'NOT ON A LINE FROM THE UNIT'
+                dfb 0
+s_r_too_far     asc 'TOO FAR'
+                dfb 0
+s_r_blocked     asc 'BLOCKED'
+                dfb 0
+s_r_no_fuel     asc 'NOT ENOUGH FUEL'
+                dfb 0
+s_r_no_target   asc 'NOT AN ENEMY UNIT'
+                dfb 0
+s_r_range       asc 'OUT OF RANGE'
+                dfb 0
+s_r_no_ammo     asc 'NO AMMUNITION'
+                dfb 0
+s_r_already     asc 'ALREADY FIRED AT THAT UNIT THIS TURN'
+                dfb 0
+s_r_over        asc 'THE GAME IS OVER'
+                dfb 0
+s_r_not_yours   asc 'NOT YOUR UNIT'
+                dfb 0
+s_r_no_moves    asc 'NO MOVES LEFT THIS TURN'
+                dfb 0
+s_r_no_phase    asc 'NO FIRING AFTER MOVING (OPTION 2)'
+                dfb 0
+s_hit           asc 'HIT  '
+                dfb 0
+s_miss          asc 'MISS '
+                dfb 0
+s_destroyed     asc 'DESTROYED  '
+                dfb 0
+s_lt            asc ' < '
+                dfb 0
+s_ge            asc ' >= '
+                dfb 0
+s_stalemate     asc 'STALEMATE'
+                dfb 0
+s_wins          asc ' WINS: '
+                dfb 0
+s_by_cruiser    asc 'CRUISER DESTROYED'
+                dfb 0
+s_by_time       asc 'OUT OF TIME'
+                dfb 0
+s_by_surrender  asc 'SURRENDER'
+                dfb 0
+s_by_stalemate  asc 'STALEMATE'
+                dfb 0
+s_any_key       asc ' (ANY KEY)'
+                dfb 0
+s_game_over     asc 'GAME OVER'
+                dfb 0
+s_red           asc 'RED'
+                dfb 0
+s_black         asc 'BLACK'
+                dfb 0
+s_to_move       asc '  '
+                dfb 0
+s_colon         asc ':'
+                dfb 0
+s_zero          asc '0'
+                dfb 0
+s_moves         asc '  MOVES '
+                dfb 0
+s_slash         asc '/'
+                dfb 0
+s_two_spaces    asc '  '
+                dfb 0
+s_paused_tag    asc 'PAUSED'
+                dfb 0
+s_ph_any        asc 'FIRE OR MOVE'
+                dfb 0
+s_ph_fire       asc 'FIRE FIRST'
+                dfb 0
+s_ph_move       asc 'MOVE ONLY NOW'
+                dfb 0
+s_no_unit       asc '-'
+                dfb 0
+s_sq            asc ' SQ='
+                dfb 0
+s_gm            asc ' GM='
+                dfb 0
+s_am            asc ' AM='
+                dfb 0
+s_fl            asc ' FL='
+                dfb 0
+s_arrow_fl      asc ' >FL='
+                dfb 0
+
+*----------------------------------------------------------
+* State (words unless noted)
+*----------------------------------------------------------
+inject_key ds 2            ; nonzero = a key for the next frame (tools/kegs_key.py)
+cur_x      ds 2
+cur_y      ds 2
+mode       ds 2
+sel_unit   ds 2
+sel_tmp    ds 2
+dirty      ds 2
+quit       ds 2
+over_shown ds 2
+shown_side ds 2
+last_sec   ds 2
+msg_ptr    ds 2
+key_code   ds 2
+key_vec    ds 2
+hud_unit   ds 2
+cx         ds 2
+cy         ds 2
+hx         ds 2
+hy         ds 2
+dir        ds 2
+dist       ds 2
+uid        ds 2
+side_tmp   ds 2
+thick      ds 2
+box_addr   ds 2
+fr_addr    ds 2
+fr_w       ds 2
+fr_h       ds 2
+fr_col     ds 2
+tmp        ds 2
+tmp2       ds 2
+tmp_a      ds 2
+tmp_h      ds 2
+lb_pos     ds 2
+lb_src     ds 2
+lb_width   ds 2
+glyph_buf  ds 2
+line_buf   ds 64
+msg_buf    ds 64

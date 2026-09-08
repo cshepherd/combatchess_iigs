@@ -1,0 +1,17 @@
+# Board 1 (natural boards) colour registers, read from the running
+# game with the atari800 monitor (GTIA and the $02C4 OS shadows).
+# Atari colour byte = hue (high nibble) x luminance (low nibble).
+#
+# register  value  meaning on the board
+COLBK       $CA    background: bright green = clear ground (glyph $00 shows it)
+COLPF0      $00    colour 0: black = mountains, Black units, and board-2 bridges
+COLPF1      $74    colour 1: blue (hue 7) = water
+COLPF2      $C4    colour 2: dark green = tree glyph $08
+COLPF3      $34    colour 3: red-orange (hue 3) = Red units and board-1 bridges
+#
+# The screen is ANTIC mode 7: 20 characters of 16 x 16 pixels, one
+# per square; bits 6-7 of each screen byte pick COLPF0-3 for that
+# square's glyph, the glyph itself is bits 0-5 in the character set
+# at $9800. Terrain is therefore a (colour, glyph) pair, see
+# tools/atari_boards_decode.py. Captured RGB values are in the
+# indexed PNG palettes under reference/raw/boards/.

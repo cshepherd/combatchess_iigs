@@ -15,9 +15,15 @@ LAUNCH_TEST  = $1004
 * between TITLE and GAME.
 tb_inited = $1100        ; byte: nonzero once toolbox_init has run
 myID      = $1102        ; word: Memory Manager user ID
-* $1104-$11FF free: game options chosen on the title screen
-* (board, army sizes, first mover, time limit, moves per
-* turn, shoot option) belong here so GAME can read them.
+opt_board = $1104        ; byte: board 1-10 to play (0 = not chosen yet)
+* $1105-$11FF free: the other game options chosen on the
+* title screen (army sizes, first mover, time limit, moves
+* per turn, shoot option) belong here so GAME can read them.
+
+* Heartbeat task record (see toolbox_init): 20 bytes the
+* firmware keeps a pointer to for the whole session, so it
+* sits outside every part, above the globals page.
+HB_TASK = $1200
 
 * QuickDraw II direct page: 3 pages, fixed just below the
 * parts' load address. Allocated from the Memory Manager by

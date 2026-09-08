@@ -75,6 +75,35 @@ toolbox_init
  jsl TOOLBOX               ; _QDStartUp
  bcs tb_fail
 
+* The game clock (spec 16.1) reads the 60 Hz tick counter
+* with _GetTick. That counter is only advanced by the Misc
+* Tools heartbeat handler, which the firmware puts on the
+* VBL vector when the first heartbeat task is registered,
+* and the interrupt manager switches VBL interrupts off
+* again whenever the heartbeat chain is empty. (Enabling
+* VBL with _IntSource or INTEN alone lasts one frame.) So
+* register a task that does nothing but reset its own
+* count. It lives at HB_TASK, outside every part, because
+* the firmware keeps a pointer to it for the rest of the
+* session while TITLE, GAME and TEST replace each other
+* at $2000.
+ ldx #HB_TASK_LEN-2
+:hb_copy
+ lda hb_template,x
+ sta HB_TASK,x
+ dex
+ dex
+ bpl :hb_copy
+ pea $0000
+ pea HB_TASK               ; long pointer to the task record
+ ldx #$1203
+ jsl TOOLBOX               ; _SetHeartBeat
+ bcs tb_fail
+ pea $0002
+ ldx #$2303
+ jsl TOOLBOX               ; _IntSource: enable VBL interrupts
+ bcs tb_fail
+
  sec
  xce
  MX %11
@@ -88,6 +117,24 @@ tb_fail
  sta tb_error
 :spin bra :spin
 tb_error dw 0
+
+* Heartbeat task record, copied to HB_TASK: link (filled by
+* the firmware), count, signature, then code the firmware
+* JSLs when the count reaches 0. The code puts the count
+* back to 1 and returns, so it runs every frame and the
+* chain is never empty. Hand-assembled because it runs at
+* HB_TASK, not where it is assembled.
+hb_template
+ dfb 0,0,0,0               ; link
+ dfb 1,0                   ; count: 1 tick
+ dfb $5A,$A5               ; signature $A55A
+ dfb $08                   ; php
+ dfb $C2,$20               ; rep #$20
+ dfb $A9,$01,$00           ; lda #$0001
+ dfb $8D,$04,$12           ; sta HB_TASK+4 (the count)
+ dfb $28                   ; plp
+ dfb $6B                   ; rtl
+HB_TASK_LEN = 20
 
 *----------------------------------------------------------
 * shr_init - Turn on Super Hi-Res (320 mode), enable bank

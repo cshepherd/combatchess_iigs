@@ -30,6 +30,18 @@ Checks are numbered from 1 in run order; `test_first_fail` holds the id of the f
 
 A check is `sta expect` then `jsr check_eq` with the actual value in A. `expect` is the test's own variable, never engine scratch: two earlier failures came from holding the expected value in `rt1` across an engine call that clobbered it.
 
+## Debug board (milestone 3)
+
+`src/dbg.s`, included by GAME, draws the board with programmer art and runs the hot-seat loop; `src/game.s` holds the PLACEHOLDER map (checklist text notation, decoded by `board_load_text`) and starting positions until the real boards are captured. It runs in native 16-bit mode and calls the engine only through the `eng_*` wrappers. To drive it from a script, resume the title past its key wait so it chains into GAME, then `python3 tools/kegs_key.py --port 6520 down down return right return E --shot NAME` pokes keys into `inject_key` one per frame and screenshots. Terrain, units, highlights and the status lines are all read back from engine state, never from events.
+
+## Board capture (milestone 2 groundwork)
+
+The Atari original runs in atari800 (Homebrew; it fetched the XL OS ROM to `~/rom` on first run). `tools/atari_drive.py` runs it under a pty so the F8 monitor is scriptable and posts keys to its process (Accessibility is trusted for this terminal; function keys need the Fn flag or macOS eats them). `tools/atari_boards_capture.py --boards 1-10` boots, picks each board through the options screen with every step verified from screen memory, and saves `boardNN.png`, `boardNN_codes.txt` and `boardNN_ram.dat` in `reference/raw/boards/`. `tools/atari_boards_decode.py boardNN_ram.dat --board N --out reference/maps/boardNN.txt` reads the game's own terrain table at $5740 and the units from the screen at $7A00 into the checklist notation plus a `_units.txt` layer (boards 6-9 need `--board` for their abstract tables). `python3 tools/gen_boards.py` (also a Makefile rule) turns the maps into `src/boards.s`; GAME loads `opt_board` from it and the debug board's number keys switch boards. `tools/atari_shot.py` and `tools/atari_charset.py` handle screenshots and the glyph sheet. Findings and addresses are in `reference/notes/capture_session.md`. Game images under `reference/atari/` are git-ignored: never commit them.
+
+## Clock under ProDOS 8
+
+`_GetTick` only advances inside the Misc Tools heartbeat handler, which the firmware installs on the VBL vector (`IRQ_VBL`, $E1/0020) when the first heartbeat task is registered, and the interrupt manager disables VBL (bit 3 of `INTEN`, $C041) whenever the heartbeat chain is empty and the mouse does not use VBL. Enabling VBL alone therefore lasts one frame. `toolbox_init` copies a do-nothing task to `HB_TASK` ($1200, outside every part) and registers it with `_SetHeartBeat`; do not move or overwrite that record. The ROM source that settled this is under `~/Desktop/work/iigs_rom/.../GS_ROM` (Misc Tools and Monitor/BRAM.INTR071).
+
 ## Program structure
 
 `CC.SYSTEM` (`src/cc.s`) is the only `.SYSTEM` file on the volume. ProDOS loads it at $2000; it relocates one page to $1000 and stays resident. Parts chain by jumping to its table in emulation mode with 8-bit M/X:
@@ -72,6 +84,7 @@ Lives in `src/tables.s`, `src/board.s`, `src/line.s`, `src/units.s`, `src/events
 | `$0C00-$0FFF` | ProDOS 8 I/O buffer for the launcher's MLI calls |
 | `$1000-$10FF` | Launcher (an `err` in cc.s fails the build if it outgrows the page) |
 | `$1100-$11FF` | Cross-part globals, zeroed at boot: `tb_inited` $1100, `myID` $1102, game options from $1104 |
+| `$1200-$1213` | Heartbeat task record registered by `toolbox_init` so the VBL tick counter keeps running |
 | `$1D00-$1FFF` | QuickDraw II direct page |
 | `$2000-$BEFF` | Current part. `toolbox_init` reserves `$0800-$BEFF` from the Memory Manager |
 | `$BF00` | ProDOS global page |
