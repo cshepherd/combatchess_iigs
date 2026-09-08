@@ -71,6 +71,8 @@ s_return  asc 'PRESS ANY KEY TO RETURN TO TITLE'
   put board
   put line
   put units
+  put events
+  put move
   put rng
 
   put common

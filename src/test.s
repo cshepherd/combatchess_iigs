@@ -150,6 +150,22 @@
   sta sec_name+1
   jsr section_end
 
+  jsr section_begin
+  jsr test_events
+  lda #<s_sec_events
+  sta sec_name
+  lda #>s_sec_events
+  sta sec_name+1
+  jsr section_end
+
+  jsr section_begin
+  jsr test_move
+  lda #<s_sec_move
+  sta sec_name
+  lda #>s_sec_move
+  sta sec_name+1
+  jsr section_end
+
 * Grand total: a "section" that started from zero.
   stz sec_pass
   stz sec_pass+1
@@ -190,7 +206,7 @@
   lda #s_return
   sta str_ptr
   ldx #40
-  ldy #180
+  ldy #194
   jsr draw_cstr
 
   jsr wait_key
@@ -1771,6 +1787,563 @@ flds_black_cruiser
  dfb 30
  da 0
 
+*----------------------------------------------------------
+* Section 13 - the event queue: empty at first (1), two
+* records queued (2) come back in order with every field
+* (10), then empty again and reset (2), a full queue drops
+* the extra push and drains completely (4). 19 checks.
+*----------------------------------------------------------
+test_events
+ MX %11
+ jsr events_clear
+ jsr event_pop
+ lda #0
+ rol
+ stz expect
+ jsr check_eq              ; nothing queued
+ ldy #0
+:fill1
+ tya
+ clc
+ adc #5                    ; type 5, params 6..10
+ sta ev_rec,y
+ iny
+ cpy #EV_SIZE
+ bne :fill1
+ jsr event_push
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq              ; queued
+ ldy #0
+:fill2
+ tya
+ clc
+ adc #20                   ; type 20, params 21..25
+ sta ev_rec,y
+ iny
+ cpy #EV_SIZE
+ bne :fill2
+ jsr event_push
+ lda #0
+ rol
+ jsr check_eq              ; queued
+ jsr event_pop
+ lda #0
+ rol
+ jsr check_eq              ; got one
+ ldy #0
+:rec1
+ tya
+ clc
+ adc #5
+ sta expect
+ lda ev_rec,y
+ phy
+ jsr check_eq              ; each field of the first record
+ ply
+ iny
+ cpy #EV_SIZE
+ bne :rec1
+ jsr event_pop
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq              ; got the second
+ lda #20
+ sta expect
+ lda ev_type
+ jsr check_eq
+ lda #25
+ sta expect
+ lda ev_p4
+ jsr check_eq
+ jsr event_pop
+ lda #0
+ rol
+ stz expect
+ jsr check_eq              ; empty again
+ lda ev_count
+ jsr check_eq              ; and reset to the start
+* fill it up
+ stz t_cost
+ ldx #0
+:fillq
+ stx t_dist
+ lda #EV_UNIT_MOVED
+ sta ev_type
+ jsr event_push
+ bcc :dropped
+ inc t_cost
+:dropped
+ ldx t_dist
+ inx
+ cpx #EV_MAX
+ bne :fillq
+ lda #EV_MAX
+ sta expect
+ lda t_cost
+ jsr check_eq              ; all EV_MAX pushes queued
+ jsr event_push
+ lda #0
+ rol
+ stz expect
+ jsr check_eq              ; one more is dropped
+ stz t_cost
+:drain
+ jsr event_pop
+ bcc :drained
+ inc t_cost
+ bra :drain
+:drained
+ lda #EV_MAX
+ sta expect
+ lda t_cost
+ jsr check_eq              ; and all EV_MAX come back
+ stz expect
+ lda ev_count
+ jsr check_eq
+ rts
+
+*----------------------------------------------------------
+* Section 14 - the movement action on a built board.
+*
+*   red cruiser (1,1) id 0, red tank (5,5) id 1,
+*   red car (10,5) id 2, black cruiser (18,9) id 11,
+*   black tank (5,3) id 12, added once the red tank has
+*   moved north past that square
+*   MOUNTAIN (3,1)  WATER (4,2)  TREE (8,1)
+* Row 1 east of the tank stays clear for the tree and fuel
+* cases; the water and mountain sit west and south-west.
+*
+* Placing the units (4, then 1 more, then 1); validation
+* prices a legal move and changes nothing (6); execute moves
+* the tank, charges fuel, resets terrain HP, flags it, fixes
+* the occupant map and queues one event with the right
+* fields (16); range beats path in the refusal order,
+* diagonals, non-lines, off board (7); units in the way,
+* with and without the rule (4); water and mountain (3);
+* trees passable, then with penalties (5); fuel exactly
+* enough, then none, and no event on refusal (10); a dead
+* unit (1); the car's reach (7); the cruiser's (6); a black
+* unit (2). 73 checks.
+*----------------------------------------------------------
+test_move
+ MX %11
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ jsr events_clear
+ lda #TERR_MOUNTAIN
+ ldx #3
+ ldy #1
+ jsr set_cell
+ lda #TERR_WATER
+ ldx #4
+ ldy #2
+ jsr set_cell
+ lda #TERR_TREE
+ ldx #8
+ ldy #1
+ jsr set_cell
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #1
+ ldy #1
+ jsr add_unit              ; id 0
+ lda #CLASS_TANK
+ ldx #5
+ ldy #5
+ jsr add_unit              ; id 1
+ lda #CLASS_CAR
+ ldx #10
+ ldy #5
+ jsr add_unit              ; id 2
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #18
+ ldy #9
+ jsr add_unit              ; id 11
+* validate the tank north 4: legal, priced, nothing changed
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #5
+ ldy #1
+ jsr mv_case
+ lda #28
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #212
+ sta expect
+ lda mv_fuel_after
+ jsr check_eq
+ lda #5
+ sta expect
+ lda unit_x+1
+ jsr check_eq
+ lda unit_y+1
+ jsr check_eq
+ lda #240
+ sta expect
+ lda unit_fuel+1
+ jsr check_eq
+* execute it, with the tank's terrain HP worn down first
+ lda #3
+ sta unit_terr_hp+1
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #5
+ ldy #1
+ jsr move_execute
+ jsr check_eq
+ lda #5
+ sta expect
+ lda unit_x+1
+ jsr check_eq
+ lda #1
+ sta expect
+ lda unit_y+1
+ jsr check_eq
+ lda #212
+ sta expect
+ lda unit_fuel+1
+ jsr check_eq
+ lda #12
+ sta expect
+ lda unit_terr_hp+1
+ jsr check_eq              ; back to the class maximum
+ lda #UF_MOVED
+ sta expect
+ lda unit_flags+1
+ and #UF_MOVED
+ jsr check_eq
+ stz expect
+ ldx #5
+ ldy #5
+ jsr get_occupant
+ jsr check_eq              ; left the old square
+ lda #2
+ sta expect
+ ldx #5
+ ldy #1
+ jsr get_occupant
+ jsr check_eq              ; id 1 on the new one
+ jsr event_pop
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq              ; one event
+ lda #EV_UNIT_MOVED
+ sta expect
+ lda ev_type
+ jsr check_eq
+ lda #1
+ sta expect
+ lda ev_p0
+ jsr check_eq              ; unit
+ lda #5
+ sta expect
+ lda ev_p1
+ jsr check_eq              ; from (5,5)
+ lda ev_p2
+ jsr check_eq
+ lda ev_p3
+ jsr check_eq              ; to (5,1)
+ lda #1
+ sta expect
+ lda ev_p4
+ jsr check_eq
+ jsr event_pop
+ lda #0
+ rol
+ stz expect
+ jsr check_eq              ; and no more
+* now the black tank, two squares south of the red tank
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_TANK
+ ldx #5
+ ldy #3
+ jsr add_unit              ; id 12
+* refusals: too far comes before the unit in the way
+ lda #MV_TOO_FAR
+ sta expect
+ lda #1
+ ldx #5
+ ldy #6
+ jsr mv_case               ; south 5
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #8
+ ldy #4
+ jsr mv_case               ; diagonal 3
+ lda #33
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #MV_TOO_FAR
+ sta expect
+ lda #1
+ ldx #9
+ ldy #5
+ jsr mv_case               ; diagonal 4
+ lda #MV_NOT_LINE
+ sta expect
+ lda #1
+ ldx #7
+ ldy #2
+ jsr mv_case               ; knight's move
+ lda #1
+ ldx #5
+ ldy #1
+ jsr mv_case               ; same square
+ lda #1
+ ldx #5
+ ldy #255
+ jsr mv_case               ; off the board
+* units in the way
+ lda #MV_BLOCKED
+ sta expect
+ lda #1
+ ldx #5
+ ldy #3
+ jsr mv_case               ; onto the black tank
+ lda #1
+ ldx #5
+ ldy #4
+ jsr mv_case               ; through it
+ stz rule_units_block_move
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #5
+ ldy #4
+ jsr mv_case               ; allowed when the rule is off
+ lda #18
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #1
+ sta rule_units_block_move
+* water and mountain
+ lda #MV_BLOCKED
+ sta expect
+ lda #1
+ ldx #3
+ ldy #3
+ jsr mv_case               ; south-west 2, across the water at (4,2)
+ lda #1
+ ldx #4
+ ldy #2
+ jsr mv_case               ; into the water
+ lda #1
+ ldx #2
+ ldy #1
+ jsr mv_case               ; west 3, through the mountain at (3,1)
+* trees: passable, then with the penalty tables set
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #9
+ ldy #1
+ jsr mv_case               ; east 4 through the tree
+ lda #28
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #5
+ sta terrain_fuel_penalty+TERR_TREE
+ lda #1
+ sta terrain_move_penalty+TERR_TREE
+ lda #MV_TOO_FAR
+ sta expect
+ lda #1
+ ldx #9
+ ldy #1
+ jsr mv_case               ; allowance 4 - 1 < 4
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #8
+ ldy #1
+ jsr mv_case               ; east 3 onto the tree
+ lda #23
+ sta expect
+ lda mv_cost
+ jsr check_eq              ; 18 + 5
+ stz terrain_fuel_penalty+TERR_TREE
+ stz terrain_move_penalty+TERR_TREE
+* fuel
+ lda #27
+ sta unit_fuel+1
+ lda #MV_NO_FUEL
+ sta expect
+ lda #1
+ ldx #9
+ ldy #1
+ jsr mv_case               ; costs 28
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #8
+ ldy #1
+ jsr mv_case               ; costs 18
+ lda #18
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #28
+ sta unit_fuel+1
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #9
+ ldy #1
+ jsr move_execute          ; exactly enough
+ jsr check_eq
+ stz expect
+ lda unit_fuel+1
+ jsr check_eq              ; and now dry
+ lda #9
+ sta expect
+ lda unit_x+1
+ jsr check_eq
+ jsr event_pop
+ lda #EV_UNIT_MOVED
+ sta expect
+ lda ev_type
+ jsr check_eq
+ lda #MV_NO_FUEL
+ sta expect
+ lda #1
+ ldx #9
+ ldy #2
+ jsr move_execute          ; one square costs 4
+ jsr check_eq
+ lda #9
+ sta expect
+ lda unit_x+1
+ jsr check_eq              ; did not move
+ jsr event_pop
+ lda #0
+ rol
+ stz expect
+ jsr check_eq              ; and queued nothing
+* a dead unit cannot move
+ lda #2
+ jsr unit_kill
+ lda #MV_NO_UNIT
+ sta expect
+ lda #2
+ ldx #11
+ ldy #5
+ jsr mv_case
+* the armored car's reach: a new one where the dead one stood
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_CAR
+ ldx #10
+ ldy #5
+ jsr add_unit              ; id 3
+ lda #MV_OK
+ sta expect
+ lda #3
+ ldx #17
+ ldy #5
+ jsr mv_case               ; east 7
+ lda #28
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #MV_TOO_FAR
+ sta expect
+ lda #3
+ ldx #18
+ ldy #5
+ jsr mv_case               ; east 8
+ lda #MV_OK
+ sta expect
+ lda #3
+ ldx #15
+ ldy #10
+ jsr mv_case               ; diagonal 5
+ lda #28
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #MV_OK
+ sta expect
+ lda #3
+ ldx #4
+ ldy #5
+ jsr mv_case               ; west 6
+ lda #21
+ sta expect
+ lda mv_cost
+ jsr check_eq
+* the cruiser's
+ lda #MV_OK
+ sta expect
+ lda #0
+ ldx #1
+ ldy #3
+ jsr mv_case               ; south 2
+ lda #27
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #MV_TOO_FAR
+ sta expect
+ lda #0
+ ldx #1
+ ldy #4
+ jsr mv_case               ; south 3
+ lda #MV_OK
+ sta expect
+ lda #0
+ ldx #2
+ ldy #2
+ jsr mv_case               ; diagonal 1
+ lda #16
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #MV_TOO_FAR
+ sta expect
+ lda #0
+ ldx #3
+ ldy #3
+ jsr mv_case               ; diagonal 2
+* a black unit
+ lda #MV_OK
+ sta expect
+ lda #12
+ ldx #5
+ ldy #1
+ jsr mv_case               ; north 2 into the square the red tank left
+ lda #10
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ rts
+
+* mv_case - A = unit, X = x, Y = y, expect = the MV_* reason
+* wanted. Validates and checks the reason; mv_* stay for
+* further checks.
+mv_case
+ MX %11
+ jsr move_validate
+ jmp check_eq
+
 * percent, injected roll, expected (1 hit / 0 miss)
 rh_cases
  dfb 100,99,1
@@ -1938,6 +2511,10 @@ s_sec_ltrace asc 'LINE TRACE'
              dfb 0
 s_sec_units  asc 'UNIT LIST'
              dfb 0
+s_sec_events asc 'EVENT QUEUE'
+             dfb 0
+s_sec_move   asc 'MOVEMENT'
+             dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0
 s_first_fail asc 'FIRST FAILING CHECK ID'
@@ -1949,5 +2526,7 @@ s_return     asc 'PRESS ANY KEY TO RETURN TO TITLE'
   put board
   put line
   put units
+  put events
+  put move
   put rng
   put common
