@@ -25,7 +25,7 @@ EV_UNIT_DESTROYED    = 7   ; unit, x, y, -, -
 EV_TERRAIN_DAMAGED   = 8   ; x, y, terrain hp left, -, -
 EV_TERRAIN_DESTROYED = 9   ; x, y, old type, new type, -
 EV_TURN_CHANGED      = 10  ; side now to move, -, -, -, -
-EV_GAME_OVER         = 11  ; result, winner, -, -, -
+EV_GAME_OVER         = 11  ; RESULT_*, REASON_*, -, -, -
 
 EV_SIZE = 6                ; type + 5 parameters
 EV_MAX  = 32               ; records the queue holds

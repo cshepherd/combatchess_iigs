@@ -176,6 +176,14 @@
   sta sec_name+1
   jsr section_end
 
+  jsr section_begin
+  jsr test_turn
+  lda #<s_sec_turn
+  sta sec_name
+  lda #>s_sec_turn
+  sta sec_name+1
+  jsr section_end
+
 * Grand total: a "section" that started from zero.
   stz sec_pass
   stz sec_pass+1
@@ -194,7 +202,7 @@
   lda #num_buf
   sta str_ptr
   lda test_first_fail
-  ldx #3
+  ldx #4
   jsr fmt_u16
   lda #7                    ; red
   ldx #0
@@ -2859,6 +2867,588 @@ pop_none
  stz expect
  jmp check_eq
 
+*----------------------------------------------------------
+* Section 16 - the turn system, ticks injected through
+* tick_vec and rolls through roll_vec (always a hit).
+*
+*   red cruiser (1,5) id 0, red tank (5,5) id 1,
+*   black cruiser (18,5) id 11, black tank (11,5) id 12
+*   options: Red first, 2 moves, Shoot Option 1, 1 minute
+*
+* Placing the units (4); game_start sets everything and
+* announces the turn (15); the wrong side is refused (2);
+* a move, a refused move, a shot and a repeat shot with the
+* bookkeeping (14); the last move ends the turn by itself
+* with the clock charged (14); four idle turns are a
+* stalemate and nothing works afterwards (20); Shoot Option
+* 2 phases (6); time runs out (4); killing the cruiser wins
+* (5); pause stops the clock (10); MM:SS (10); surrender
+* (2). 106 checks.
+*----------------------------------------------------------
+test_turn
+ MX %11
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ jsr events_clear
+ lda #<stub_roll
+ sta roll_vec
+ lda #>stub_roll
+ sta roll_vec+1
+ stz stub_value
+ lda #<stub_tick
+ sta tick_vec
+ lda #>stub_tick
+ sta tick_vec+1
+ stz stub_tick_value+2
+ stz stub_tick_value+3
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #1
+ ldy #5
+ jsr add_unit              ; id 0
+ lda #CLASS_TANK
+ ldx #5
+ ldy #5
+ jsr add_unit              ; id 1
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #18
+ ldy #5
+ jsr add_unit              ; id 11
+ lda #CLASS_TANK
+ ldx #11
+ ldy #5
+ jsr add_unit              ; id 12
+ lda #SIDE_RED
+ sta opt_first_side
+ lda #2
+ sta opt_moves_per_turn
+ lda #SHOOT_ANY
+ sta opt_shoot_option
+ lda #1
+ sta opt_time_minutes
+* game_start at tick 1000
+ lda #<1000
+ ldx #>1000
+ jsr tick_set
+ jsr game_start
+ stz expect
+ lda active_side
+ jsr check_eq              ; Red
+ lda moves_used
+ jsr check_eq
+ lda turn_phase
+ jsr check_eq              ; PHASE_FIRE_OR_MOVE
+ lda game_result
+ jsr check_eq
+ lda #<3600
+ sta rt4
+ lda #>3600
+ sta rt5
+ ldx #SIDE_RED
+ jsr check_time            ; a full minute each
+ ldx #SIDE_BLACK
+ jsr check_time
+ lda #<1000
+ sta rt4
+ lda #>1000
+ sta rt5
+ lda #<turn_start_tick
+ sta rptr
+ lda #>turn_start_tick
+ sta rptr+1
+ jsr check_word
+ lda #EV_TURN_CHANGED
+ jsr pop_type
+ stz expect
+ lda ev_p0
+ jsr check_eq
+ jsr pop_none
+* the wrong side
+ lda #TN_NOT_YOURS
+ sta expect
+ lda #12
+ ldx #11
+ ldy #4
+ jsr turn_move
+ jsr check_eq
+ lda #12
+ ldx #1
+ jsr turn_fire
+ jsr check_eq
+* the red tank steps west, then fires east 7 at the black tank
+ lda #TN_OK
+ sta expect
+ lda #1
+ ldx #4
+ ldy #5
+ jsr turn_move
+ jsr check_eq
+ lda #1
+ sta expect
+ lda moves_used
+ jsr check_eq
+ stz expect
+ lda turn_phase
+ jsr check_eq              ; option 1 never changes phase
+ lda #EV_UNIT_MOVED
+ jsr pop_type
+ jsr pop_none
+ lda #MV_NOT_LINE
+ sta expect
+ lda #1
+ ldx #4
+ ldy #255
+ jsr turn_move
+ jsr check_eq              ; the move's own reason comes through
+ lda #1
+ sta expect
+ lda moves_used
+ jsr check_eq              ; and cost nothing
+ lda #TN_OK
+ sta expect
+ lda #1
+ ldx #12
+ jsr turn_fire
+ jsr check_eq
+ lda #1
+ sta expect
+ lda turn_shots
+ jsr check_eq
+ lda #20
+ sta expect
+ lda unit_hp+12
+ jsr check_eq
+ jsr drain_count
+ lda #4
+ sta expect
+ lda t_cost
+ jsr check_eq              ; fired, hit, unit damaged, terrain damaged
+ lda #FR_ALREADY
+ sta expect
+ lda #1
+ ldx #12
+ jsr turn_fire
+ jsr check_eq
+* the second move is the last: the turn ends at tick 1600
+ lda #<1600
+ ldx #>1600
+ jsr tick_set
+ lda #TN_OK
+ sta expect
+ lda #1
+ ldx #5
+ ldy #5
+ jsr turn_move
+ jsr check_eq
+ lda #SIDE_BLACK
+ sta expect
+ lda active_side
+ jsr check_eq
+ stz expect
+ lda moves_used
+ jsr check_eq
+ lda inactive_turns
+ jsr check_eq
+ lda #<3000
+ sta rt4
+ lda #>3000
+ sta rt5
+ ldx #SIDE_RED
+ jsr check_time            ; 600 ticks charged
+ lda #<1600
+ sta rt4
+ lda #>1600
+ sta rt5
+ lda #<turn_start_tick
+ sta rptr
+ lda #>turn_start_tick
+ sta rptr+1
+ jsr check_word
+ lda #EV_UNIT_MOVED
+ jsr pop_type
+ lda #EV_TURN_CHANGED
+ jsr pop_type
+ lda #SIDE_BLACK
+ sta expect
+ lda ev_p0
+ jsr check_eq
+ jsr pop_none
+* four idle turns in a row: a stalemate
+ lda #<2600
+ ldx #>2600
+ jsr tick_set
+ jsr turn_end
+ stz expect
+ jsr check_eq              ; TN_OK
+ lda #<2600
+ sta rt4
+ lda #>2600
+ sta rt5
+ ldx #SIDE_BLACK
+ jsr check_time            ; 1000 ticks charged
+ lda #1
+ sta expect
+ lda inactive_turns
+ jsr check_eq
+ stz expect
+ lda active_side
+ jsr check_eq              ; Red again
+ jsr events_clear
+ lda #<3000
+ ldx #>3000
+ jsr tick_set
+ jsr turn_end
+ stz expect
+ jsr check_eq
+ lda #2
+ sta expect
+ lda inactive_turns
+ jsr check_eq
+ lda #<2600
+ sta rt4
+ lda #>2600
+ sta rt5
+ ldx #SIDE_RED
+ jsr check_time            ; 400 more off Red
+ lda #<3100
+ ldx #>3100
+ jsr tick_set
+ jsr turn_end
+ lda #3
+ sta expect
+ lda inactive_turns
+ jsr check_eq
+ jsr events_clear
+ lda #<3200
+ ldx #>3200
+ jsr tick_set
+ jsr turn_end
+ lda #TN_GAME_OVER
+ sta expect
+ jsr check_eq
+ lda #RESULT_STALEMATE
+ sta expect
+ lda game_result
+ jsr check_eq
+ lda #REASON_STALEMATE
+ sta expect
+ lda result_reason
+ jsr check_eq
+ lda #EV_GAME_OVER
+ jsr pop_type
+ lda #RESULT_STALEMATE
+ sta expect
+ lda ev_p0
+ jsr check_eq
+ lda #REASON_STALEMATE
+ sta expect
+ lda ev_p1
+ jsr check_eq
+ jsr pop_none
+ lda #TN_GAME_OVER
+ sta expect
+ lda #1
+ ldx #5
+ ldy #4
+ jsr turn_move
+ jsr check_eq
+ lda #1
+ ldx #12
+ jsr turn_fire
+ jsr check_eq
+ jsr turn_end
+ jsr check_eq
+* Shoot Option 2: a shot, then a move closes the door
+ lda #SHOOT_FIRST
+ sta opt_shoot_option
+ lda #3
+ sta opt_moves_per_turn
+ lda #<4000
+ ldx #>4000
+ jsr tick_set
+ jsr game_start
+ jsr events_clear
+ lda #PHASE_FIRE
+ sta expect
+ lda turn_phase
+ jsr check_eq
+ lda #TN_OK
+ sta expect
+ lda #1
+ ldx #12
+ jsr turn_fire
+ jsr check_eq              ; east 6, before moving
+ lda #1
+ ldx #5
+ ldy #4
+ jsr turn_move
+ jsr check_eq
+ lda #PHASE_MOVE
+ sta expect
+ lda turn_phase
+ jsr check_eq
+ lda #TN_NO_FIRE_PHASE
+ sta expect
+ lda #1
+ ldx #12
+ jsr turn_fire
+ jsr check_eq
+ jsr turn_end
+ lda #SIDE_BLACK
+ sta expect
+ lda active_side
+ jsr check_eq
+ lda #PHASE_FIRE
+ sta expect
+ lda turn_phase
+ jsr check_eq              ; Black starts in the fire phase
+* Black's minute runs out
+ lda #<7600
+ ldx #>7600
+ jsr tick_set
+ jsr clock_check
+ lda #RESULT_RED_WINS
+ sta expect
+ lda game_result
+ jsr check_eq
+ lda #REASON_TIME
+ sta expect
+ lda result_reason
+ jsr check_eq
+ ldx #SIDE_BLACK
+ jsr clock_remaining
+ stz rt4
+ stz rt5
+ lda #<clk_out
+ sta rptr
+ lda #>clk_out
+ sta rptr+1
+ jsr check_word            ; nothing left
+* the cruiser falls: Black fires first at a 4-HP cruiser
+ lda #SIDE_BLACK
+ sta opt_first_side
+ lda #<8000
+ ldx #>8000
+ jsr tick_set
+ jsr game_start
+ jsr events_clear
+ lda #4
+ sta unit_hp
+ lda #12
+ ldx #8
+ ldy #5
+ jsr unit_set_pos          ; west 7 to (1,5)
+ lda #TN_OK
+ sta expect
+ lda #12
+ ldx #0
+ jsr turn_fire
+ jsr check_eq
+ lda #RESULT_BLACK_WINS
+ sta expect
+ lda game_result
+ jsr check_eq
+ lda #REASON_CRUISER
+ sta expect
+ lda result_reason
+ jsr check_eq
+ jsr drain_count
+ lda #EV_GAME_OVER
+ sta expect
+ lda t_legal
+ jsr check_eq              ; the last event
+ lda #TN_GAME_OVER
+ sta expect
+ lda #12
+ ldx #0
+ jsr turn_fire
+ jsr check_eq
+* pause stops the clock
+ lda #SIDE_RED
+ sta opt_first_side
+ lda #<100
+ ldx #>100
+ jsr tick_set
+ jsr game_start
+ jsr events_clear
+ lda #<400
+ ldx #>400
+ jsr tick_set
+ jsr turn_pause
+ lda #<3300
+ sta rt4
+ lda #>3300
+ sta rt5
+ ldx #SIDE_RED
+ jsr check_time            ; 300 charged
+ lda #<900
+ ldx #>900
+ jsr tick_set
+ ldx #SIDE_RED
+ jsr clock_remaining
+ lda #<clk_out
+ sta rptr
+ lda #>clk_out
+ sta rptr+1
+ jsr check_word            ; still 3300 while paused
+ jsr turn_resume
+ lda #<900
+ sta rt4
+ lda #>900
+ sta rt5
+ lda #<turn_start_tick
+ sta rptr
+ lda #>turn_start_tick
+ sta rptr+1
+ jsr check_word
+ lda #<1000
+ ldx #>1000
+ jsr tick_set
+ ldx #SIDE_RED
+ jsr clock_remaining
+ lda #<3200
+ sta rt4
+ lda #>3200
+ sta rt5
+ lda #<clk_out
+ sta rptr
+ lda #>clk_out
+ sta rptr+1
+ jsr check_word            ; running again
+ ldx #SIDE_BLACK
+ jsr clock_remaining
+ lda #<3600
+ sta rt4
+ lda #>3600
+ sta rt5
+ jsr check_word            ; the idle side is untouched
+* minutes and seconds
+ ldx #0                    ; 5 bytes per case
+:mmss
+ lda mmss_cases,x
+ sta clk_out
+ lda mmss_cases+1,x
+ sta clk_out+1
+ lda mmss_cases+2,x
+ sta clk_out+2
+ stz clk_out+3
+ stx t_class
+ jsr ticks_to_mmss
+ ldx t_class
+ lda mmss_cases+3,x
+ sta expect
+ lda clk_min
+ jsr check_eq
+ lda mmss_cases+4,x
+ sta expect
+ lda clk_sec
+ jsr check_eq
+ txa
+ clc
+ adc #5
+ tax
+ cpx #25
+ bne :mmss
+* surrender
+ ldx #SIDE_RED
+ jsr game_surrender
+ lda #RESULT_BLACK_WINS
+ sta expect
+ lda game_result
+ jsr check_eq
+ lda #REASON_SURRENDER
+ sta expect
+ lda result_reason
+ jsr check_eq
+ jsr events_clear
+ lda #<sys_tick
+ sta tick_vec
+ lda #>sys_tick
+ sta tick_vec+1
+ lda #<rng_roll100
+ sta roll_vec
+ lda #>rng_roll100
+ sta roll_vec+1
+ rts
+
+* ticks (3 bytes, little-endian), expected minutes, seconds
+mmss_cases
+ dfb $10,$0E,$00,1,0       ; 3600
+ dfb $0F,$0E,$00,0,59      ; 3599
+ dfb $E0,$A5,$01,30,0      ; 108000
+ dfb $00,$00,$00,0,0
+ dfb $3D,$00,$00,0,1       ; 61
+
+* stub_tick - the injected tick source.
+stub_tick
+ MX %11
+ ldx #3
+:copy
+ lda stub_tick_value,x
+ sta now_tick,x
+ dex
+ bpl :copy
+ rts
+stub_tick_value ds 4
+
+* tick_set - A = low byte, X = high byte of the next tick
+* value (upper word stays 0).
+tick_set
+ MX %11
+ sta stub_tick_value
+ stx stub_tick_value+1
+ rts
+
+* check_time - X = side; rt4/rt5 = expected low word of its
+* stored time. 2 checks.
+check_time
+ MX %11
+ txa
+ asl
+ asl
+ clc
+ adc #<side_time
+ sta rptr
+ lda #>side_time
+ adc #0
+ sta rptr+1
+ jmp check_word
+
+* check_word - rptr -> a 16-bit value, rt4/rt5 = expected
+* low/high byte. 2 checks.
+check_word
+ MX %11
+ lda rt4
+ sta expect
+ ldy #0
+ lda (rptr),y
+ jsr check_eq
+ lda rt5
+ sta expect
+ ldy #1
+ lda (rptr),y
+ jmp check_eq
+
+* drain_count - pops every queued event; t_cost = how many,
+* t_legal = the type of the last one.
+drain_count
+ MX %11
+ stz t_cost
+ stz t_legal
+:pop
+ jsr event_pop
+ bcc :done
+ inc t_cost
+ lda ev_type
+ sta t_legal
+ bra :pop
+:done
+ rts
+
 * percent, injected roll, expected (1 hit / 0 miss)
 rh_cases
  dfb 100,99,1
@@ -2928,8 +3518,8 @@ expect          ds 1     ; expected value for check_eq; engine code never touche
 * column once the first is full. Entered and left in 8-bit
 * A/X/Y.
 *----------------------------------------------------------
-NUM_COL  = 92              ; numbers this far right of the name
-COL_STEP = 160             ; second column starts here
+NUM_COL  = 88              ; numbers this far right of the name
+COL_STEP = 152             ; second column starts here
 ROW_STEP = 10
 ROW_TOP  = 36
 ROW_LAST = 176             ; last baseline before the footer
@@ -2963,12 +3553,12 @@ section_end
  lda #num_buf
  sta str_ptr
  lda num_pass
- ldx #3
+ ldx #4
  jsr fmt_u16
- lda #num_buf+4
+ lda #num_buf+5
  sta str_ptr
  lda num_total
- ldx #3
+ ldx #4
  jsr fmt_u16
  lda num_fail
  beq :green
@@ -3017,7 +3607,7 @@ num_fail  ds 2
 num_total ds 2
 line_y    ds 2
 col_x     ds 2
-num_buf   asc '   /   '
+num_buf   asc '    /    '
           dfb 0
 
 s_heading    asc 'COMBAT CHESS RULES SELF-TESTS'
@@ -3052,6 +3642,8 @@ s_sec_move   asc 'MOVEMENT'
              dfb 0
 s_sec_fire_act asc 'FIRE'
              dfb 0
+s_sec_turn   asc 'TURN SYSTEM'
+             dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0
 s_first_fail asc 'FIRST FAIL'
@@ -3067,4 +3659,5 @@ s_return     asc 'PRESS ANY KEY TO RETURN TO TITLE'
   put move
   put rng
   put fire
+  put turn
   put common

@@ -46,7 +46,7 @@ Every part is a SYS file with `ORG $2000` that does `put shared` at the top (equ
 
 ## Rules engine
 
-Lives in `src/tables.s`, `src/board.s`, `src/line.s`, `src/units.s`, `src/events.s`, `src/move.s`, `src/rng.s`, `src/fire.s` and the includes that will follow them (turns, game), included by GAME and TEST in that order. Conventions:
+Lives in `src/tables.s`, `src/board.s`, `src/line.s`, `src/units.s`, `src/events.s`, `src/move.s`, `src/rng.s`, `src/fire.s`, `src/turn.s`, included by GAME and TEST in that order. Conventions:
 
 - Routines are entered in native mode with 8-bit A/X/Y (`MX %11`), DBR $00, D $0000, and say so if they differ.
 - Scratch is the direct-page range `rt0`-`rt3`, `rptr`, `rptr2`, `rt4`-`rt7` ($E0-$EB) from shared.s, live only within one routine. Each routine's header says which it clobbers.
@@ -61,6 +61,8 @@ Lives in `src/tables.s`, `src/board.s`, `src/line.s`, `src/units.s`, `src/events
 - No rendering or sound from rules code (spec section 32). Actions queue events through `event_push` (record in `ev_type`, `ev_p0`-`ev_p4`; types and parameter meanings listed in `src/events.s`); the display layer drains them with `event_pop`.
 - Actions come in pairs: a `*_validate` that checks and prices without touching state and returns a reason code (`MV_*`, `FR_*`), and a `*_execute` that validates, changes state and queues events. Turn-level rules (whose turn, moves left, Shoot Option phase) are checked by the turn code around them, not inside. Victory is the game layer's check after an action, using `fr_outcome`.
 - A hit goes through `unit_take_hit`, which drops unit HP and terrain HP together (spec 23) and destroys the square or the unit when either reaches 0. What happens to a unit whose square is destroyed under it, and what a miss does instead (`miss_resolve`, spec 12), are UNVERIFIED and marked as such in `src/fire.s`.
+- The turn layer in `src/turn.s` is what the UI and AI call: `game_start` (after placing units, with the `opt_*` options set), `turn_move`, `turn_fire`, `turn_end`, `turn_pause`/`turn_resume`, `game_surrender`, and `clock_check` every frame. They return `TN_*` codes or pass the action's `MV_*`/`FR_*` reason through. The game ends through `game_over` only; read `game_result` and `result_reason`.
+- Time is heartbeat ticks (60 Hz) from `get_tick`, which goes through `tick_vec` (default the Misc Tools tick counter, never the battery clock) so tests inject exact values. Each side's remaining time is stored; the active side's live time is `clock_remaining`, charged at turn end, pause and game over. `ticks_to_mmss` formats it. Whether the turn ends by itself after the last allowed move is UNVERIFIED and sits behind `rule_auto_end_turn`.
 - Every value is 8-bit; the largest in the spec is max fuel, 240.
 
 ## Bank $00 map

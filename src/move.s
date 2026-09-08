@@ -41,6 +41,8 @@ move_validate
  sta mv_unit
  stx ln_x1
  sty ln_y1
+ cmp #MAX_UNITS
+ bcs :no_unit
  tax
  lda unit_flags,x
  bpl :no_unit
