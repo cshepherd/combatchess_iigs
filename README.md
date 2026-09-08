@@ -10,7 +10,7 @@ Milestone 1 in progress. The disk boots into a launcher that chains a placeholde
 
 The ten original boards and their starting positions have been captured from the Atari game (see `reference/notes/capture_session.md`) and generated into `src/boards.s`. The game part is the milestone 3 debug board: a programmer-art 20 x 11 board on any of the ten boards, playable hot-seat with the keyboard. Arrows or WASD move the cursor, RETURN selects a friendly unit and then confirms a move or a shot, M and F switch between move and fire (legal destinations and targets are highlighted), ESC cancels, E ends the turn, P pauses, X surrenders, the number keys restart on another board (0 is board 10), Q quits to the title.
 
-Press T on the title screen to run the rules self-tests.
+The title screen carries the Atari original's tank plaque as a bitmap over QuickDraw text. RETURN begins the game, O opens the options page (the original's seven options with its exact ranges and defaults: O or down arrow moves between fields, S or right arrow steps a value, RETURN returns), and T runs the rules self-tests.
 
 ## Building
 
@@ -38,7 +38,7 @@ Boot `out/combatchess.po` in KEGS, GSplus, or on real hardware. The volume conta
 | Path | Contents |
 |---|---|
 | `src/cc.s` | `CC.SYSTEM` launcher: relocates to $1000, chains TITLE and GAME |
-| `src/title.s` | Title screen part (will also own the options screen) |
+| `src/title.s` | Title screen and options page; `src/title_art.s` is the generated plaque bitmap |
 | `src/game.s` | Game part: rules engine and board display go here |
 | `src/test.s` | Rules self-tests part (spec section 33) |
 | `src/tables.s` | Rules data: unit class, fuel cost and hit probability tables with their lookups |

@@ -224,19 +224,157 @@ fmt_u16
  rts
 
 *----------------------------------------------------------
-* wait_key - Clear the keyboard strobe, block until a key is
-* pressed, clear it again. Returns the key's ASCII code in
-* A (high bit stripped). Native, 16-bit M/X in and out.
+* cstr_width - Pixel width of the C string at A in the
+* current font. Native, 16-bit M/X. Returns A.
+*----------------------------------------------------------
+cstr_width
+ MX %00
+ pea $0000                 ; result space
+ pea $0000                 ; string pointer, high word (bank $00)
+ pha                       ; string pointer, low word
+ ldx #$AA04
+ jsl TOOLBOX               ; _CStringWidth
+ pla
+ rts
+
+*----------------------------------------------------------
+* Line builder: composes a C string in line_buf for the
+* status lines and option pages. Native, 16-bit M/X.
+*----------------------------------------------------------
+lb_reset
+ MX %00
+ stz lb_pos
+ rts
+
+* lb_str - append the C string at A. Uses rptr (direct page)
+* for the indirect read; nothing in the engine runs while a
+* line is built.
+lb_str
+ MX %00
+ sta rptr
+ ldy #0
+ ldx lb_pos
+ sep #$20
+ MX %10
+:copy
+ lda (rptr),y
+ beq :done
+ sta line_buf,x
+ inx
+ iny
+ bra :copy
+:done
+ rep #$20
+ MX %00
+ stx lb_pos
+ rts
+
+* lb_dec - append A as decimal, right-justified in X chars.
+lb_dec
+ MX %00
+ stx lb_width
+ pha
+ lda #line_buf
+ clc
+ adc lb_pos
+ sta str_ptr
+ pla
+ ldx lb_width
+ jsr fmt_u16
+ lda lb_pos
+ clc
+ adc lb_width
+ sta lb_pos
+ rts
+
+* lb_dec2 - append A as two digits with a leading zero.
+lb_dec2
+ MX %00
+ cmp #10
+ bcs :two
+ pha
+ lda #s_lb_zero
+ jsr lb_str
+ pla
+ ldx #1
+ jmp lb_dec
+:two
+ ldx #2
+ jmp lb_dec
+
+lb_end
+ MX %00
+ ldx lb_pos
+ sep #$20
+ MX %10
+ lda #0
+ sta line_buf,x
+ rep #$20
+ MX %00
+ rts
+
+s_lb_zero asc '0'
+          dfb 0
+lb_pos    ds 2
+lb_width  ds 2
+line_buf  ds 64
+
+*----------------------------------------------------------
+* cfg_defaults - The Atari original's default options into
+* page $11 (reference/notes/options_ranges.md). Any mode in;
+* the caller's M width is preserved.
+*----------------------------------------------------------
+cfg_defaults
+ php
+ sep #$20
+ MX %10
+ lda #1
+ sta cfg_board
+ lda #3
+ sta cfg_tanks_black
+ lda #2
+ sta cfg_tanks_red
+ lda #5
+ sta cfg_cars_black
+ lda #4
+ sta cfg_cars_red
+ lda #0
+ sta cfg_first             ; Red starts
+ sta cfg_computer          ; computer plays Black (no AI yet: both human)
+ lda #20
+ sta cfg_time_black
+ sta cfg_time_red
+ lda #3
+ sta cfg_moves
+ lda #1
+ sta cfg_shoot
+ lda #CFG_MAGIC
+ sta cfg_valid
+ plp
+ rts
+
+*----------------------------------------------------------
+* wait_key - Block until a key is pressed (or one is poked
+* into inject_key by a debugger), returning its ASCII code
+* in A with the high bit stripped. Native, 16-bit M/X in
+* and out.
 *----------------------------------------------------------
 wait_key
  MX %00
  sep $30
  MX %11
  sta $C010                 ; drop any key still latched
-:wait lda $C000
+:wait
+ lda inject_key
+ bne :poked
+ lda $C000
  bpl :wait
  sta $C010
  and #$7F
+ bra :got
+:poked
+ stz inject_key
+:got
  rep $30
  MX %00
  and #$00FF

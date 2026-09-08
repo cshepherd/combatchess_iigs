@@ -31,6 +31,12 @@ SHARED = src/shared.s src/common.s src/tables.s src/board.s src/line.s src/units
 src/boards.s: tools/gen_boards.py $(wildcard reference/maps/board*.txt)
 	python3 tools/gen_boards.py
 
+# The title plaque bitmap, generated from the captured title screen.
+src/title_art.s: tools/gen_title_art.py reference/raw/title/title_plaque.bin reference/raw/title/title_charset.bin reference/raw/title/title_info.json reference/raw/title/title.png
+	python3 tools/gen_title_art.py
+
+out/title: src/title_art.s
+
 .PHONY: all package clean
 all: package
 package: $(IMGFILE)

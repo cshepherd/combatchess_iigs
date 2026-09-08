@@ -15,10 +15,31 @@ LAUNCH_TEST  = $1004
 * between TITLE and GAME.
 tb_inited = $1100        ; byte: nonzero once toolbox_init has run
 myID      = $1102        ; word: Memory Manager user ID
-opt_board = $1104        ; byte: board 1-10 to play (0 = not chosen yet)
-* $1105-$11FF free: the other game options chosen on the
-* title screen (army sizes, first mover, time limit, moves
-* per turn, shoot option) belong here so GAME can read them.
+
+* Game options (spec 29), set on the title screen's options
+* page and read by GAME. Ranges and defaults are the Atari
+* original's, captured in reference/notes/options_ranges.md.
+cfg_board       = $1104  ; 1-10
+cfg_tanks_black = $1105  ; 0-3
+cfg_tanks_red   = $1106  ; 0-3
+cfg_cars_black  = $1107  ; 0-5
+cfg_cars_red    = $1108  ; 0-5
+cfg_first       = $1109  ; SIDE_RED (0) or SIDE_BLACK (1) starts
+cfg_computer    = $110A  ; CFG_CPU_*: who the computer plays
+cfg_time_black  = $110B  ; minutes, 1-30
+cfg_time_red    = $110C  ; minutes, 1-30
+cfg_moves       = $110D  ; moves per turn, 1-20
+cfg_shoot       = $110E  ; Shoot Option 1 or 2
+cfg_valid       = $110F  ; CFG_MAGIC once cfg_defaults has run
+CFG_MAGIC       = $A5
+CFG_CPU_BLACK   = 0      ; in the original's SELECT order
+CFG_CPU_RED     = 1
+CFG_CPU_NONE    = 2
+CFG_CPU_BOTH    = 3
+
+* A key for the next frame, poked by tools/kegs_key.py.
+* wait_key and the debug board loop both honour it.
+inject_key      = $1110  ; word
 
 * Heartbeat task record (see toolbox_init): 20 bytes the
 * firmware keeps a pointer to for the whole session, so it

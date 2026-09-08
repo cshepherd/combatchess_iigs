@@ -8,12 +8,9 @@
 * dbg.s. Number keys on the board restart on another board;
 * Q returns to the title.
 *
-* Options other than the board are fixed here until the
-* title screen has an options page (spec 29): Red first,
-* 3 moves a turn, Shoot Option 1, 10 minutes each. Army
-* sizes are whatever the captured starting positions hold
-* (the original's defaults: Red 2 tanks 4 cars, Black 3
-* tanks 5 cars).
+* Options come from the title screen's options page through
+* page $11 (shared.s cfg_*); cfg_defaults fills in the
+* original's defaults if GAME is entered directly.
 *----------------------------------------------------------
 
   ORG $2000
@@ -26,10 +23,10 @@
   jsr toolbox_init          ; only if GAME was launched directly
   inc tb_inited
 :ready
-  lda opt_board
-  bne :chosen
-  lda #1
-  sta opt_board             ; board 1 until the title offers a choice
+  lda cfg_valid
+  cmp #CFG_MAGIC
+  beq :chosen
+  jsr cfg_defaults          ; GAME launched without the title
 :chosen
   clc
   xce
@@ -52,15 +49,24 @@
   jmp LAUNCH_TITLE
 
 *----------------------------------------------------------
-* setup_game - Load board opt_board with its starting units,
-* apply the fixed options, seed the generator from the tick
-* counter, and begin the first turn. 8-bit A/X/Y.
+* setup_game - Load board cfg_board with its starting units
+* trimmed to the chosen army sizes, apply the options from
+* page $11, seed the generator from the tick counter, and
+* begin the first turn. 8-bit A/X/Y.
 * Out: carry set = ready; carry clear = that board has not
 *      been captured yet (nothing changed).
+*
+* The captured starting positions hold the original's
+* default armies (Red 2 tanks 4 cars, Black 3 tanks 5 cars).
+* Smaller armies drop the last-listed units of that class;
+* UNVERIFIED whether the original drops the same ones. Larger
+* armies cannot be placed until their positions are captured,
+* so counts above the captured units are ignored.
+* cfg_computer is stored but not acted on: no AI yet.
 *----------------------------------------------------------
 setup_game
  MX %11
- lda opt_board
+ lda cfg_board
  beq :missing
  cmp #NUM_BOARDS+1
  bcs :missing
@@ -84,6 +90,15 @@ setup_game
  jsr board_load_text
  jsr units_clear
  jsr events_clear
+* army limits for this game: index side*3 + class
+ lda cfg_tanks_red
+ sta side_class_max+1
+ lda cfg_cars_red
+ sta side_class_max+2
+ lda cfg_tanks_black
+ sta side_class_max+4
+ lda cfg_cars_black
+ sta side_class_max+5
  ldy #0
 :unit
  lda (rptr2),y
@@ -101,18 +116,20 @@ setup_game
  sta un_y
  iny
  phy
- jsr unit_add
+ jsr unit_add              ; refused once a class is at its limit
  ply
  bra :unit
 :placed
- lda #SIDE_RED
+ lda cfg_first
  sta opt_first_side
- lda #3
+ lda cfg_moves
  sta opt_moves_per_turn
- lda #SHOOT_ANY
+ lda cfg_shoot
  sta opt_shoot_option
- lda #10
- sta opt_time_minutes
+ lda cfg_time_red
+ sta opt_time_minutes+SIDE_RED
+ lda cfg_time_black
+ sta opt_time_minutes+SIDE_BLACK
  jsr sys_tick
  lda now_tick
  sta rt0

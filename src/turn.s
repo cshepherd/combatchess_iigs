@@ -57,7 +57,7 @@ STALEMATE_TURNS = 4        ; idle turns in a row (spec 17.4)
 opt_first_side     dfb SIDE_RED
 opt_moves_per_turn dfb 3   ; 1..20
 opt_shoot_option   dfb SHOOT_ANY
-opt_time_minutes   dfb 10  ; 1..30 per player
+opt_time_minutes   dfb 10,10   ; per side, 1..30 (the original sets Black and Red apart)
 
 * UNVERIFIED (spec 15.4, 34): whether the turn ends by itself
 * after the last allowed move or waits for the player, who
@@ -499,16 +499,16 @@ ticks_to_mmss
 * now_tick first.
 *----------------------------------------------------------
 
-* clock_set - X = side: stored time = opt_time_minutes.
+* clock_set - X = side: stored time = that side's minutes.
 clock_set
  MX %11
+ lda opt_time_minutes,x
+ sta clk_tmp
+ stz clk_tmp+1
  txa
  asl
  asl
  tax
- lda opt_time_minutes
- sta clk_tmp
- stz clk_tmp+1
  rep #$30
  MX %00
  stz side_time,x

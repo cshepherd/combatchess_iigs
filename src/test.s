@@ -2965,6 +2965,7 @@ test_turn
  sta opt_shoot_option
  lda #1
  sta opt_time_minutes
+ sta opt_time_minutes+1
 * game_start at tick 1000
  lda #<1000
  ldx #>1000

@@ -92,9 +92,20 @@ each board at its untouched start with the default armies:
 | `reference/crops/terrain/charset_board1.png` | 6, 8: every glyph in all four colours |
 | `reference/palette/natural.txt` and `boards_capture.json` | 12: colour registers per board |
 
-Still to capture (checklist sections A-C, 9-11, 13): title states,
-the options screen fields and ranges, both status displays, cursor
-states, HUD extremes, firing and destruction effects, typography.
+Title (checklist A01) and options (B): `reference/raw/title/`
+holds `title.png`, the plaque's 120 mode-7 codes
+(`title_plaque.bin`), the character set they use (`title_charset.bin`,
+from $7000), colours (`title_info.json`: COLBK $0C grey, COLPF0 $36
+hull brown, COLPF1/2 $1C yellow, COLPF3 $76 plaque blue) and the
+twelve text lines (`title_text.txt`). `options_ranges.md` and
+`.json` list every option field in cursor order with the full SELECT
+cycle of each. `tools/gen_title_art.py` turns the plaque into the IIGS
+title bitmap.
+
+Still to capture (checklist A02-A06, C, 9-11, 13): title blink or
+colour-cycle states and the demonstration game, both status displays,
+cursor states, HUD extremes, firing and destruction effects,
+typography.
 
 ## Starting positions
 
@@ -111,11 +122,17 @@ Spec section 34 items settled or narrowed by this session:
 
 - **Exact initial piece placement on all ten boards**: captured
   (default armies). Placement for other army sizes not yet captured.
-- **Exact selectable army compositions**: the options screen's
-  defaults are Red 2 tanks 4 cars, Black 3 tanks 5 cars, so Red can
-  field at least 4 armored cars; spec section 6's "Red up to 3
-  armored cars" is wrong or incomplete. The full SELECT ranges of
-  each field still need cycling and reading.
+- **Exact selectable army compositions**: cycled with SELECT
+  (`options_ranges.md`). Both sides' tanks run 0-3 and both sides'
+  armored cars 0-5; the defaults are Red 2 tanks 4 cars, Black 3
+  tanks 5 cars. Spec section 6 (Red 3/3, Black 5/5 from the manual)
+  is wrong on both counts. The cursor order is board, Black tanks,
+  Red tanks, Black cars, Red cars, who starts, computer side, Black
+  time, Red time, moves per turn, Shoot Option; every field wraps.
+  Time limits are 1-30 minutes per side and are set separately for
+  Black and Red; moves per turn 1-20; the computer field cycles
+  BLACK, RED, "WILL NOT PLAY", BOTH. Where units go for army sizes
+  other than the defaults is still uncaptured.
 - **Board 9 grey squares**: they are the dark checker squares, half
   the board; how they are destroyed is still open, as is whether
   board 6's striped block cells (same code) are destructible.

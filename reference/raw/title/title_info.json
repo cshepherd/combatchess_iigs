@@ -1,0 +1,22 @@
+{
+ "plaque": "title_plaque.bin: 6 rows x 20 mode-7 codes at $7200",
+ "charset": "title_charset.bin: 1 KB from $7000 (CHBAS $70)",
+ "colours_shadow": [
+  "$36",
+  "$1C",
+  "$1C",
+  "$76",
+  "$0C"
+ ],
+ "gtia": {
+  "COLPM0": "00",
+  "COLPM1": "00",
+  "COLPM2": "00",
+  "COLPM3": "00",
+  "COLPF0": "36",
+  "COLPF1": "1C",
+  "COLPF2": "1C",
+  "COLPF3": "76",
+  "COLBK": "0C"
+ }
+}

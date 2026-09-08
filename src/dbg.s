@@ -287,7 +287,8 @@ key_table
 
 *----------------------------------------------------------
 * k_board - a digit: restart on that board (0 = board 10).
-* Boards not captured yet are refused with a message.
+* Boards not captured yet are refused with a message. Only
+* the board changes; the other options keep their values.
 *----------------------------------------------------------
 k_board
  MX %00
@@ -298,13 +299,13 @@ k_board
  lda #10
 :num
  sta tmp
- lda opt_board
+ lda cfg_board
  and #$00FF
  sta tmp2                  ; to restore if the board is missing
  lda tmp
  sep #$20
  MX %10
- sta opt_board
+ sta cfg_board
  rep #$20
  MX %00
  jsr eng_setup_game
@@ -312,7 +313,7 @@ k_board
  lda tmp2
  sep #$20
  MX %10
- sta opt_board
+ sta cfg_board
  rep #$20
  MX %00
  lda #s_no_board
@@ -1237,7 +1238,7 @@ draw_hud1
 :playing
  lda #s_board_tag
  jsr lb_str
- lda opt_board
+ lda cfg_board
  and #$00FF
  ldx #2
  jsr lb_dec
@@ -1393,82 +1394,6 @@ draw_hud3
  ldx #2
  ldy #HUD_Y+32
  jmp draw_cstr
-
-*----------------------------------------------------------
-* Line builder: composes a C string in line_buf.
-*----------------------------------------------------------
-lb_reset
- MX %00
- stz lb_pos
- rts
-
-* lb_str - append the C string at A. Uses rptr (direct
-* page) for the indirect read; nothing in the engine is
-* running while the line is built.
-lb_str
- MX %00
- sta rptr
- ldy #0
- ldx lb_pos
- sep #$20
- MX %10
-:copy
- lda (rptr),y
- beq :done
- sta line_buf,x
- inx
- iny
- bra :copy
-:done
- rep #$20
- MX %00
- stx lb_pos
- rts
-
-* lb_dec - append A as decimal, right-justified in X chars.
-lb_dec
- MX %00
- stx lb_width
- pha
- lda #line_buf
- clc
- adc lb_pos
- sta str_ptr
- pla
- ldx lb_width
- jsr fmt_u16
- lda lb_pos
- clc
- adc lb_width
- sta lb_pos
- rts
-
-* lb_dec2 - append A as two digits with a leading zero
-* (seconds).
-lb_dec2
- MX %00
- cmp #10
- bcs :two
- pha
- lda #s_zero
- jsr lb_str
- pla
- ldx #1
- jmp lb_dec
-:two
- ldx #2
- jmp lb_dec
-
-lb_end
- MX %00
- ldx lb_pos
- sep #$20
- MX %10
- lda #0
- sta line_buf,x
- rep #$20
- MX %00
- rts
 
 *----------------------------------------------------------
 * Engine wrappers: 16-bit in, 8-bit call, 16-bit out. A
@@ -1721,7 +1646,6 @@ s_arrow_fl      asc ' >FL='
 *----------------------------------------------------------
 * State (words unless noted)
 *----------------------------------------------------------
-inject_key ds 2            ; nonzero = a key for the next frame (tools/kegs_key.py)
 cur_x      ds 2
 cur_y      ds 2
 mode       ds 2
@@ -1754,9 +1678,5 @@ tmp        ds 2
 tmp2       ds 2
 tmp_a      ds 2
 tmp_h      ds 2
-lb_pos     ds 2
-lb_src     ds 2
-lb_width   ds 2
 glyph_buf  ds 2
-line_buf   ds 64
 msg_buf    ds 64

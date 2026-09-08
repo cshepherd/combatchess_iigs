@@ -145,25 +145,42 @@ class Atari:
         if self.in_monitor:
             return ""
         self.read_for(0.2)
-        self._post(KEYCODES["F8"], FN_FLAG)
-        out = self.read_for(1.5)
-        if ">" not in out:
-            raise RuntimeError("monitor prompt did not appear: " + out[-200:])
+        out = ""
+        for attempt in range(6):        # a posted key can be missed while the window is settling
+            self._post(KEYCODES["F8"], FN_FLAG)
+            out += self.read_until_prompt(1.5)
+            if out.rstrip().endswith(">"):
+                break
+            os.write(self.fd, b"\n")    # already in the monitor with a pager or prompt pending?
+            out += self.read_until_prompt(1.0)
+            if out.rstrip().endswith(">"):
+                break
+        else:
+            raise RuntimeError("monitor prompt did not appear; emulator log tail: " + self.log[-300:])
         self.in_monitor = True
         return out.strip().splitlines()[-2] if len(out.strip().splitlines()) > 1 else out
 
-    def cmd(self, line, sec=1.5):
+    def read_until_prompt(self, timeout=8.0):
+        """Read until the monitor's "> " prompt is at the end of the
+        output, answering the pager wherever it appears."""
+        out = ""
+        end = time.time() + timeout
+        while time.time() < end:
+            chunk = self.read_for(0.15)
+            if chunk:
+                out += chunk
+                if "Press Return to continue" in out[-60:]:
+                    os.write(self.fd, b"\n")
+                    continue
+                if out.rstrip().endswith(">"):
+                    return out
+        return out
+
+    def cmd(self, line, sec=8.0):
         """Run a monitor command, return its output (pager answered)."""
         assert self.in_monitor, "call monitor() first"
         os.write(self.fd, (line + "\n").encode())
-        out = ""
-        while True:
-            out += self.read_for(sec)
-            if "Press Return to continue" in out[-60:]:
-                os.write(self.fd, b"\n")
-                continue
-            break
-        return out
+        return self.read_until_prompt(sec)
 
     def cont(self):
         assert self.in_monitor
@@ -177,13 +194,15 @@ class Atari:
         data = bytearray()
         addr = start
         while len(data) < length:
-            out = self.cmd(f"M {addr:04X}", 1.0)
+            out = self.cmd(f"M {addr:04X}")
+            got = 0
             for m in re.finditer(r"^([0-9A-F]{4}): ((?:[0-9A-F]{2} ){16})", out, re.M):
                 a = int(m.group(1), 16)
-                if a == addr:
+                if a == addr:           # lines come in order; take each once
                     data += bytes(int(b, 16) for b in m.group(2).split())
-                    addr += 16
-            if len(data) == 0:
+                    addr = (addr + 16) & 0xFFFF
+                    got += 1
+            if got == 0:
                 raise RuntimeError("no memory lines parsed: " + out[-200:])
         return bytes(data[:length])
 

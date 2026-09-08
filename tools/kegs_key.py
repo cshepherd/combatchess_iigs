@@ -58,9 +58,9 @@ def main():
     ap.add_argument("--shot", help="screenshot name after the last key")
     a = ap.parse_args()
 
-    addr = resolve_symbols(a.listing, ["inject_key"]).get("inject_key")
-    if addr is None:
-        raise SystemExit(f"inject_key not found in {a.listing}")
+    # inject_key is an equate in shared.s ($1110, page $11), so it has no
+    # listing address; fall back to it if the listing gives nothing.
+    addr = resolve_symbols(a.listing, ["inject_key"]).get("inject_key", 0x1110)
     k = Kegs(port=a.port)
     k.halt()
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
