@@ -1,0 +1,15 @@
+# Build output (disk image, assembled parts, staged #TTAAAA copies)
+out/
+
+# merlin32 -V listings, regenerated on every build
+src/*_Output.txt
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# merlin32 side file (Cadius file-info hints)
+src/_FileInformation.txt
