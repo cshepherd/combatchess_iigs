@@ -19,8 +19,10 @@
 * cruiser, three tanks and five armoured cars: a unit's
 * fuel, ammo, hit points and terrain hit points, or the name
 * alone when the army never had that unit (captured: Red's
-* third TANK and fifth ARMOURED CAR rows). A destroyed unit's
-* row is UNVERIFIED; it shows the name alone here too.
+* third TANK and fifth ARMOURED CAR rows). A destroyed unit
+* is the same: the original deletes its record and closes the
+* gap, so the survivors of a class fill the first rows and the
+* bare names follow (captured, tools/atari_destroyed_capture.py).
 *----------------------------------------------------------
 STATUS_SLOT_TANK = 14      ; repainted per side; the board itself never uses it
 STATUS_TANK_PAL  = STATUS_SLOT_TANK*2+$E19E00 ; its palette entry (Merlin: left to right)
@@ -266,7 +268,9 @@ st_num
  jmp draw_cstr
 
 * st_find_unit - the st_nth living unit (1-based) of class
-* st_class on status_side, in id order. Carry set, A = id.
+* st_class on status_side, in id order, so the survivors fill
+* the first rows of their class as the original's compacted
+* unit table does. Carry set, A = id.
 st_find_unit
  MX %00
  lda status_side

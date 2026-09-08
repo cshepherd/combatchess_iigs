@@ -137,10 +137,85 @@ the bottom, and the clock runs while the screen is shown
 `status_own.json`, each read taking a moment: the clock went from
 19:55 to 19:48).
 
+Destroyed unit (checklist C, spec 28): `status_destroyed_red.*` and
+`status_destroyed_black.*` (PNG, JSON, mode-7 codes; the RAM dumps
+stay git-ignored), from `tools/atari_destroyed_capture.py`, which sets
+COMPUTER WILL PLAY BOTH and polls the board until a roster row goes
+bare, then `status_destroyed_board.png` and `status_destroyed_log.txt`.
+Red had lost an armoured car:
+
+```
+ **STATUS FOR RED    FUEL AMMO GAME SQR
+                                DMG DMG
+ BATTLE CRUISER       224  15    30  15
+ TANK                 202  16    24  12
+ TANK                 162  15    16  04
+ TANK
+ ARMOURED CAR         141  08    18  09
+ ARMOURED CAR         139  08    14  05
+ ARMOURED CAR         038  01    14  05
+ ARMOURED CAR
+ ARMOURED CAR
+```
+
+A destroyed unit's row looks exactly like a unit the army never had:
+the game deletes its 16-byte record and closes the gap (Red's table at
+$5600 holds six records, the dead car's mask bit $08 is gone and the
+later records have moved up), so the survivors of each class fill the
+first rows and the bare names follow. Two earlier runs showed the same
+for a destroyed Red tank and a destroyed Black tank. The board
+screenshot has a brown burst about two squares across over the
+squares where the car stood: a player/missile shape (SDMCTL is $2E,
+players and missiles on, and the screen memory under it is ordinary
+terrain), presumably the destruction effect, still showing several
+seconds later. The trees at (2, 1) and (3, 2) there had just become
+clear squares.
+
 Still to capture (checklist A02-A06, 9-11, 13): title blink or
 colour-cycle states and the demonstration game, cursor states, HUD
-extremes, firing and destruction effects, typography, and how the
-status roster shows a destroyed unit.
+extremes, the firing effect and the destruction effect's timing,
+typography.
+
+## Unit records
+
+The game keeps one 16-byte record per unit, Black's nine at $5500 and
+Red's at $5600, in roster order (cruiser, tanks, cars; unused slots
+zero). Located by searching a status-screen RAM dump for the roster's
+fuel values, then read against the board 1 start dump
+(`reference/raw/boards/board01_ram.dat`):
+
+| Offset | Field | Start values |
+|---|---|---|
+| +0 | screen code of the unit's glyph (colour in bits 6-7: $01-$03 Black, $C1-$C3 Red) | |
+| +1 | position as an offset into the 220-byte board, row x 20 + x | Black cruiser $C7 = (19, 9) |
+| +2 | fuel | $F0 240, cars $A0 160 |
+| +3 | ammo | $10 16, cars $08 8 |
+| +4 | square hit points (the roster's SQR DMG) | $0F 15, $0C 12, $09 9 |
+| +5 | unit hit points (GAME DMG) | $1E 30, $18 24, $12 18 |
+| +6, +7 | zero at the start; $01 or $04 seen later on units that had been hit (UNVERIFIED use) | |
+| +8 | this unit's bit in a two-byte mask: $01-$20 for slots 0-5, $81/$82/$84 for slots 6-8 (bit 7 selects the second byte); presumably the spec 13 fired-at bookkeeping | |
+| +9 | class weight: cruiser $0C, tank $04, car $01 (UNVERIFIED meaning, likely the AI's valuation) | |
+| +10..+12 | zero at the start; later a byte, a board offset and a small number on units that have acted (UNVERIFIED, likely the AI's last target or move) | |
+| +13..+15 | zero | |
+
+Seen while the computer played both sides (run of
+`tools/atari_destroyed_capture.py`, board 1, default armies):
+
+- Destroyed trees become clear squares: the board cell goes from
+  colour 2 glyph $08 to colour 0 glyph $00 and the game's own terrain
+  table at $5740 is updated to match, so the table always holds the
+  current terrain.
+- A unit's SQR DMG drops with its GAME DMG under fire (a tank at GAME
+  16, SQR 04 after two 4-point hits from 24/12), as spec 23 says.
+- Fuel is zero-padded to three digits on the status screen (`061`),
+  as the other columns are to two.
+- A unit's glyph can be missing from the board's screen memory for
+  several seconds while it is still alive (the cursor or the move
+  animation covers it), so counting glyphs does not detect a loss; the
+  roster does.
+- With the computer playing both sides the two HUD lines show only the
+  clocks (`18:29` / `18:23`), no unit figures, and SELECT still opens
+  the status screens.
 
 ## Starting positions
 
@@ -185,6 +260,15 @@ Spec section 34 items settled or narrowed by this session:
 - **Status display** (spec 28): nine fixed roster rows, name alone for
   a unit the army lacks, `FUEL AMMO GAME SQR / DMG DMG` heads, the
   tank in the picture coloured by side, both HUD lines kept.
+- **Status roster for a destroyed unit** (spec 28): the name alone, as
+  for a unit the army never had, with the class's survivors listed
+  first: the unit record is deleted and the table compacted.
+- **Destroyed trees** (spec 34): become clear squares, and the game's
+  terrain table at $5740 is updated to match. Square hit points live
+  in the unit record (+4) and drop with the unit's own, as spec 23
+  says; the roster's SQR DMG column shows them.
+- **Destruction effect**: a brown player/missile burst about two
+  squares across, drawn over the square where the unit died.
 - **Status line** (checklist H): two lines of 40 columns at $1FB0:
   `MM:SS # SQ=15, GM=30, AM=16, FL=240` for Red (`#`) and `_` for
   Black, matching spec section 25.

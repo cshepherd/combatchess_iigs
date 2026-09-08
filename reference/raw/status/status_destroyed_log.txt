@@ -1,0 +1,50 @@
+options: *** CURRENT PLAY OPTIONS *** / GAME BOARD IS #01 / TANKS:          BLACK 3, RED 2 / ARMORED CARS:   BLACK 5, RED 4 / RED   WILL START FIRST / COMPUTER WILL PLAY BOTH / TIME LIMITS (MINUTES): BLACK 20, RED 20 / MOVES PER TURN IS 03; SHOOT OPTION #1 / PUSH OPTION TO MOVE THE BLINKING CURSOR. / PUSH SELECT TO CHANGE OPTION AT THE / BLINKING CURSOR. / WHEN THE OPTIONS ARE SET: PUSH START TO / BEGIN THE GAME.
+start: 16 units, HUD 19:95 | 20:00
+armies (numbered rows expected): {'BLACK': 9, 'RED': 7}
++   6s units 16 (red 7, black 9) clocks 19:55  terrain changed: (4,4) 2:08->0:00
++  11s units 16 (red 7, black 9) clocks 19:95 19 52
++  17s units 16 (red 7, black 9) clocks 19:54 19 52
++  23s units 15 (red 6, black 9) clocks 19:50 19 52
++  28s units 15 (red 6, black 9) clocks 19:45 19 52
++  34s units 16 (red 7, black 9) clocks 19:48 19 44
++  40s units 16 (red 7, black 9) clocks 19:44  terrain changed: (16,8) 2:08->0:00
++  45s units 16 (red 7, black 9) clocks 19:39  terrain changed: (9,8) 2:08->0:00, (10,8) 2:08->0:00
++  51s units 16 (red 7, black 9) clocks 19:35  terrain changed: (8,8) 2:08->0:00
++  57s units 15 (red 7, black 8) clocks 19:30 
++  63s units 16 (red 7, black 9) clocks 19:40 19 30
++  68s units 15 (red 6, black 9) clocks 19:35 
++  74s units 16 (red 7, black 9) clocks 19:26 
++  80s units 16 (red 7, black 9) clocks 19:22 
++  85s units 16 (red 7, black 9) clocks 19:34 19 18
++  91s units 16 (red 7, black 9) clocks 19:30 
++  97s units 16 (red 7, black 9) clocks 19:18 19 25
++ 102s units 16 (red 7, black 9) clocks 19:13 19 25
++ 108s units 16 (red 7, black 9) clocks 19:08 
++ 114s units 15 (red 6, black 9) clocks 19:23 19 06
++ 119s units 16 (red 7, black 9) clocks 19:19 
++ 125s units 16 (red 7, black 9) clocks 19:14  terrain changed: (10,9) 2:08->0:00
++ 131s units 16 (red 7, black 9) clocks 19:10  terrain changed: (11,9) 2:08->0:00
++ 137s units 16 (red 7, black 9) clocks 19:05 19 06 terrain changed: (12,9) 2:08->0:00
++ 142s units 15 (red 7, black 8) clocks 19:01 
++ 148s units 16 (red 7, black 9) clocks 18:56 
++ 154s units 16 (red 7, black 9) clocks 19:05 18 53
++ 159s units 16 (red 7, black 9) clocks 19:00 
++ 165s units 15 (red 6, black 9) clocks 18:56  terrain changed: (2,1) 2:08->0:00
++ 171s units 15 (red 7, black 8) clocks 18:49 18 55
++ 176s units 15 (red 6, black 9) clocks 18:45 
+checking the roster (check 1)
+RED: 6 numbered rows of 7; odd rows []
+   | **STATUS FOR RED    FUEL AMMO GAME SQR
+   |                                DMG DMG
+   | BATTLE CRUISER       224  15    30  15
+   | TANK                 202  16    24  12
+   | TANK                 162  15    16  04
+   | TANK
+   | ARMOURED CAR         141  08    18  09
+   | ARMOURED CAR         139  08    14  05
+   | ARMOURED CAR         038  01    14  05
+   | ARMOURED CAR
+   | ARMOURED CAR
+   |
+captured black and red status screens and the board
+done
