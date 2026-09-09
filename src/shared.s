@@ -46,6 +46,11 @@ inject_key      = $1110  ; word
 * sits outside every part, above the globals page.
 HB_TASK = $1200
 
+* Sound Tool Set work area: one direct page, in the free
+* bank-0 span between the heartbeat record and QuickDraw's
+* direct page. Passed to _SoundStartUp by toolbox_init.
+SOUND_DP = $1C00
+
 * QuickDraw II direct page: 3 pages, fixed just below the
 * parts' load address. Allocated from the Memory Manager by
 * toolbox_init so the record matches what we use.

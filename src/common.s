@@ -104,6 +104,8 @@ toolbox_init
  jsl TOOLBOX               ; _IntSource: enable VBL interrupts
  bcs tb_fail
 
+ jsr snd_toolstart
+
  sec
  xce
  MX %11
@@ -117,6 +119,18 @@ tb_fail
  sta tb_error
 :spin bra :spin
 tb_error dw 0
+
+* Sound Tool Set (spec 5, Milestone 5): start it so the game
+* can play DOC effects with _FFStartSound. It installs the
+* free-form-synth interrupt handler and needs one direct
+* page. A missing DOC is not fatal; the game just runs mute,
+* so a failure here is ignored. Native 16-bit.
+snd_toolstart
+ MX %00
+ pea SOUND_DP
+ ldx #$0208
+ jsl TOOLBOX               ; _SoundStartUp
+ rts
 
 * Heartbeat task record, copied to HB_TASK: link (filled by
 * the firmware), count, signature, then code the firmware

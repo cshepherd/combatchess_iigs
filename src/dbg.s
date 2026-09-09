@@ -454,6 +454,8 @@ do_move
  ldy cur_y
  jsr eng_turn_move
  bcs :moved
+ lda #SFX_UI
+ jsr snd_play              ; invalid move feedback
  jsr reason_mv
  jmp set_msg
 :moved
@@ -473,6 +475,8 @@ do_fire
  ldy cur_y
  jsr eng_turn_fire_at      ; the unit there, else the square
  bcs :fired
+ lda #SFX_UI
+ jsr snd_play              ; invalid shot feedback
  jsr reason_fr
  jmp set_msg
 :fired
@@ -1577,10 +1581,14 @@ shot_check
  stz fr_shot
  rep #$20
  MX %00
+ lda #SFX_CANNON
+ jsr snd_play              ; the cannon report as the shot leaves
  jsr draw_shot             ; the projectile travels attacker -> target
  lda fr_shot_hit
  and #$00FF
  beq :nohit
+ lda #SFX_EXPLODE
+ jsr snd_play              ; the blast when it lands
  lda fr_shot_tx
  and #$00FF
  sta cx
@@ -1928,6 +1936,8 @@ anim_check
  stz mv_moved
  rep #$20
  MX %00
+ lda #SFX_MOVE
+ jsr snd_play              ; the engine note as the unit slides
 * the moving unit's glyph (class 1-3) and colour register
  lda mv_last_unit
  and #$00FF

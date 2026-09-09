@@ -45,7 +45,7 @@ src/status_art.s: tools/gen_plaque.py reference/raw/status/status_own_mode7_7D2C
 src/board_art.s: tools/gen_board_art.py reference/raw/boards/board_charset.bin reference/raw/boards/boards_capture.json $(wildcard reference/raw/boards/board*_codes.txt) $(wildcard reference/raw/boards/board*.png)
 	python3 tools/gen_board_art.py
 
-out/game: src/status.s src/status_art.s src/art.s src/board_art.s
+out/game: src/status.s src/status_art.s src/art.s src/board_art.s src/sound.s
 
 .PHONY: all package clean
 all: package
