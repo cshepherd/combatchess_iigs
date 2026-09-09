@@ -227,7 +227,7 @@ draw_line
  sty dl_y
  stx dl_x
  cpx #$FFFF
- bne :draw
+ bne draw_segs
  stz dl_w
  ldy #0
 :measure
@@ -249,7 +249,8 @@ draw_line
  sbc dl_w
  lsr
  sta dl_x
-:draw
+* draw_segs - draw the segment list at rptr from dl_x, dl_y.
+draw_segs
  ldy #0
 :seg
  lda (rptr),y
@@ -383,15 +384,21 @@ options_page
  bra :key
 :next_field
  lda cur_field
+ sta df_old
  inc
  cmp #NUM_FIELDS
  bcc :set_field
  lda #0
 :set_field
  sta cur_field
- jmp :redraw
+ lda df_old
+ jsr draw_field           ; the old field un-highlights
+ lda cur_field
+ jsr draw_field           ; the new field highlights
+ jmp :key
 :prev_field
  lda cur_field
+ sta df_old
  dec
  bpl :set_field
  lda #NUM_FIELDS-1
@@ -399,12 +406,128 @@ options_page
 :next_value
  lda #1
  jsr step_field
- jmp :redraw
+ jsr fmt_fields           ; reformat the value buffers (no drawing)
+ lda cur_field
+ jsr draw_field           ; redraw just this field's value in place
+ jmp :key
 :prev_value
  lda #$FFFF
  jsr step_field
- jmp :redraw
+ jsr fmt_fields
+ lda cur_field
+ jsr draw_field
+ jmp :key
 :leave
+ rts
+
+*----------------------------------------------------------
+* draw_field - redraw one option field's value in place: A =
+* field number. Walks its line's segments to the value's
+* pixel x, clears from there to the end of the line, and
+* redraws the value and whatever follows it on the line (so a
+* value that changes width, e.g. the time or the side name,
+* shifts the rest correctly). Highlighted if it is cur_field.
+* Native 16-bit.
+*----------------------------------------------------------
+draw_field
+ MX %00
+ and #$00FF
+ sta df_field
+ asl
+ tax
+ lda opt_field_seg,x
+ sta rptr
+ ldx df_field
+ lda opt_field_y,x
+ and #$00FF
+ sta dl_y
+ lda #8
+ sta dl_x
+ ldy #0
+:walk
+ lda (rptr),y
+ sta dl_str
+ iny
+ iny
+ lda (rptr),y
+ and #$00FF
+ cmp df_field
+ beq :found
+ iny
+ phy
+ lda dl_str
+ jsr cstr_width
+ clc
+ adc dl_x
+ sta dl_x
+ ply
+ bra :walk
+:found
+ dey
+ dey
+ tya
+ clc
+ adc rptr
+ sta rptr                 ; point rptr at the value segment (Y still valid)
+ jsr opt_clear            ; erase from the value's x to the line end (clobbers Y)
+ jmp draw_segs
+
+*----------------------------------------------------------
+* opt_clear - erase dl_x..320 for the option line at dl_y,
+* over the glyph rows, to the grey background (slot 0).
+*----------------------------------------------------------
+opt_clear
+ MX %00
+ lda dl_x
+ lsr
+ sta oc_byte              ; start byte (2 px each)
+ lda #160
+ sec
+ sbc oc_byte
+ sta oc_cnt               ; bytes to the row end
+ lda dl_y
+ sec
+ sbc #8
+ sta oc_row               ; top glyph row
+ lda #10
+ sta oc_rows
+:row
+ lda oc_row
+ asl
+ asl
+ asl
+ asl
+ asl                      ; row * 32
+ sta oc_tmp
+ lda oc_row
+ asl
+ asl
+ asl
+ asl
+ asl
+ asl
+ asl                      ; row * 128
+ clc
+ adc oc_tmp               ; row * 160
+ clc
+ adc #SCREEN
+ clc
+ adc oc_byte
+ tax
+ sep #$20
+ MX %10
+ ldy oc_cnt
+ lda #0
+:b
+ stal $E10000,x
+ inx
+ dey
+ bne :b
+ rep #$20
+ MX %00
+ inc oc_row
+ dec oc_rows
+ bne :row
  rts
 
 * step_field - add A (+1 or -1) to the current field's value,
@@ -451,6 +574,14 @@ step_field
 
 * cfg address, minimum, maximum, in the original's cursor order.
 NUM_FIELDS = 11
+* Per field (0..10): the segment list its value lives on, and
+* the line's baseline y. Used by draw_field.
+opt_field_seg
+ da seg_board,seg_tanks,seg_tanks,seg_cars,seg_cars,seg_first
+ da seg_cpu,seg_time,seg_time,seg_moves,seg_moves
+opt_field_y
+ dfb 44,64,64,74,74,94,104,124,124,144,144
+
 field_tab
  da cfg_board
  dfb 1,10
@@ -781,6 +912,13 @@ nb_moves   ds 3
 nb_shoot   ds 3
 
 cur_field ds 2
+df_field  ds 2
+df_old    ds 2
+oc_byte   ds 2
+oc_cnt    ds 2
+oc_row    ds 2
+oc_rows   ds 2
+oc_tmp    ds 2
 sf_delta  ds 2
 sf_min    ds 2
 sf_max    ds 2
