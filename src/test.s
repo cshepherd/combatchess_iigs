@@ -1062,7 +1062,7 @@ terr_cases
  dfb TERR_CLEAR,TF_MOVE+TF_FIRE,TERR_CLEAR
  dfb TERR_TREE,TF_MOVE+TF_DESTRUCT+TF_SLOW,TERR_CLEAR
  dfb TERR_WATER,TF_FIRE,TERR_WATER
- dfb TERR_BRIDGE,TF_MOVE+TF_FIRE+TF_DESTRUCT,TERR_WATER
+ dfb TERR_BRIDGE,TF_MOVE+TF_FIRE+TF_DESTRUCT,TERR_CLEAR
  dfb TERR_MOUNTAIN,0,TERR_MOUNTAIN
  dfb TERR_WHITE,TF_MOVE+TF_FIRE,TERR_WHITE
  dfb TERR_YELLOW,TF_MOVE+TF_FIRE,TERR_YELLOW
@@ -1073,7 +1073,7 @@ terr_cases
 * type placed, expected destroyed flag, expected type after
 des_cases
  dfb TERR_TREE,1,TERR_CLEAR
- dfb TERR_BRIDGE,1,TERR_WATER
+ dfb TERR_BRIDGE,1,TERR_CLEAR
  dfb TERR_GREY,1,TERR_WHITE
  dfb TERR_MOUNTAIN,0,TERR_MOUNTAIN
  dfb TERR_WATER,0,TERR_WATER
@@ -2752,7 +2752,7 @@ test_fire
  stz expect
  lda unit_terr_hp+12
  jsr check_eq
- lda #TERR_WATER
+ lda #TERR_CLEAR
  sta expect
  ldx #5
  ldy #1
@@ -2785,7 +2785,7 @@ test_fire
  sta expect
  lda ev_p2
  jsr check_eq
- lda #TERR_WATER
+ lda #TERR_CLEAR
  sta expect
  lda ev_p3
  jsr check_eq
@@ -3847,12 +3847,12 @@ test_fire_at
  sta expect
  lda turn_shots
  jsr check_eq              ; four shots taken
- lda #TERR_WATER
+ lda #TERR_CLEAR
  sta expect
  ldx #5
  ldy #7
  jsr get_cell
- jsr check_eq              ; and now destroyed to water
+ jsr check_eq              ; and now destroyed to clear ground
  rts
 
 *----------------------------------------------------------

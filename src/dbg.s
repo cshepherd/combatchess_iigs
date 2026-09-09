@@ -166,7 +166,7 @@ update_clock
  cmp last_sec
  beq :same
  sta last_sec
- jmp draw_hud_lines
+ jmp draw_clock            ; just the clock digits, not the whole line (no flashing)
 :same
  rts
 
@@ -1323,6 +1323,59 @@ hud_draw_line
  ldy #s_h_fl
  jmp hud_field3
 
+* draw_clock - redraw only the active side's clock digits in
+* place (clear the clock field, then the MM:SS), so the
+* per-second tick does not repaint and flash the whole line.
+CLK_BYTES = 22             ; clock field width in bytes (x 16 up to the marker at 64)
+draw_clock
+ MX %00
+ lda active_side
+ and #$00FF
+ asl
+ asl
+ asl                       ; side * 8 rows
+ clc
+ adc hud_top
+ sta clk_top               ; top row of the active side's strip
+* clear the clock field to the strip's grey
+ jsr rows_to_offset
+ clc
+ adc #SCREEN
+ clc
+ adc #HX_CLOCK/2           ; + the clock's byte column (16 px = 8 bytes)
+ sta fr_addr
+ lda #CLK_BYTES
+ sta fr_w
+ lda #HUD_LINE_H
+ sta fr_h
+ lda #COL_HUD_BG
+ jsr set_fill_colour
+ jsr fill_rect
+* the MM:SS text
+ lda #COL_BLACK
+ ldx #COL_HUD_BG
+ jsr set_colors
+ lda active_side
+ and #$00FF
+ tax
+ jsr eng_clock_remaining   ; clk_min / clk_sec
+ jsr lb_reset
+ lda clk_min
+ jsr lb_dec2
+ lda #s_colon
+ jsr lb_str
+ lda clk_sec
+ jsr lb_dec2
+ jsr lb_end
+ lda #line_buf
+ sta str_ptr
+ lda clk_top
+ clc
+ adc #7                    ; baseline
+ tay
+ ldx #HX_CLOCK
+ jmp draw_cstr
+
 * hud_pick_unit - the unit hud_side's line shows (see above).
 * Out: A = id.
 hud_pick_unit
@@ -2393,6 +2446,7 @@ shot_fp      ds 2
 shot_bg_addr ds 2
 shot_sub     ds 2
 shot_buf     ds 32         ; 4 x 8 background save (4 bytes x 8 rows)
+clk_top      ds 2
 msg_ptr    ds 2
 key_code   ds 2
 key_vec    ds 2
