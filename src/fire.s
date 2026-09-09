@@ -141,13 +141,24 @@ fire_validate_at
  jsr cell_flags
  and #TF_DESTRUCT
  beq :no_target
- jsr fire_check_line
+ jsr fire_check_line       ; line, range, sight, ammunition
  bcc :fail
+ ldx fr_tx
+ ldy fr_ty
+ jsr cell_index
+ tax                       ; X = cell index
+ lda fr_attacker
+ jsr square_has_fired_at   ; spec 13: not twice at the same target per turn (checked last, like units)
+ bcs :already
  lda #FR_OK
  sec
  rts
 :no_unit
  lda #FR_NO_UNIT
+ clc
+ rts
+:already
+ lda #FR_ALREADY
  clc
  rts
 :no_target
@@ -303,6 +314,12 @@ fire_execute_at
  ldx fr_attacker
  dec unit_ammo,x
  inc unit_shots,x
+ ldx fr_tx
+ ldy fr_ty
+ jsr cell_index
+ tax                       ; X = cell index
+ lda fr_attacker
+ jsr square_mark_fired     ; spec 13: remember this square for the turn
  lda #EV_SHOT_FIRED
  jsr fr_event
  lda #1

@@ -25,6 +25,7 @@ NUM_SIDES  = 2
 
 UNITS_PER_SIDE = 11
 MAX_UNITS      = 22
+MAX_FIRED_SQ   = 8         ; squares an attacker's fire is tracked against per turn (spec 13)
 NO_UNIT        = $FF
 
 * unit_flags bits. UF_ALIVE is bit 7 so "lda unit_flags,x"
@@ -251,6 +252,7 @@ units_begin_turn
  stz unit_fired_lo,x
  stz unit_fired_hi,x
  stz unit_shots,x
+ stz fired_sq_n,x
  lda unit_flags,x
  and #$FF-UF_MOVED
  sta unit_flags,x
@@ -327,6 +329,66 @@ unit_mark_fired_at
 
 bit_table dfb $01,$02,$04,$08,$10,$20,$40,$80
 
+*----------------------------------------------------------
+* square_has_fired_at - Has attacker A already fired at cell
+* X this turn (spec 13 applied to squares)?
+* In:  A = attacker id, X = cell index.
+* Out: carry set = yes. Clobbers A, X, Y, rt2, rt3.
+*----------------------------------------------------------
+square_has_fired_at
+ MX %11
+ stx rt3                   ; the cell to look for
+ tax                       ; X = attacker
+ lda fired_sq_n,x
+ beq :no                   ; fired at no squares yet
+ sta rt2                   ; remaining to scan
+ txa
+ asl
+ asl
+ asl                       ; attacker * MAX_FIRED_SQ
+ tax                       ; X = base index into fired_sq
+:scan
+ lda fired_sq,x
+ cmp rt3
+ beq :yes
+ inx
+ dec rt2
+ bne :scan
+:no
+ clc
+ rts
+:yes
+ sec
+ rts
+
+*----------------------------------------------------------
+* square_mark_fired - remember attacker A fired at cell X
+* this turn (up to MAX_FIRED_SQ squares; extra shots past the
+* cap are not tracked). Clobbers A, X, Y, rt0, rt2, rt3.
+*----------------------------------------------------------
+square_mark_fired
+ MX %11
+ stx rt3                   ; cell
+ sta rt2                   ; attacker
+ tax
+ lda fired_sq_n,x
+ cmp #MAX_FIRED_SQ
+ bcs :full
+ sta rt0                   ; current count
+ lda rt2
+ asl
+ asl
+ asl                       ; attacker * MAX_FIRED_SQ
+ clc
+ adc rt0                   ; + count = slot for the new cell
+ tay
+ lda rt3
+ sta fired_sq,y
+ ldx rt2
+ inc fired_sq_n,x
+:full
+ rts
+
 * Parameters for unit_add.
 un_side  ds 1
 un_class ds 1
@@ -348,5 +410,7 @@ unit_flags    ds MAX_UNITS
 unit_fired_lo ds MAX_UNITS   ; enemy slots 0-7 fired at this turn
 unit_fired_hi ds MAX_UNITS   ; enemy slots 8-10
 unit_shots    ds MAX_UNITS   ; shots this turn
+fired_sq_n    ds MAX_UNITS   ; squares this attacker fired at this turn (0..MAX_FIRED_SQ)
+fired_sq      ds MAX_UNITS*MAX_FIRED_SQ  ; their cell indices, attacker*MAX_FIRED_SQ + n
 side_units      ds NUM_SIDES ; slots used per side
 side_class_used ds 6         ; side*3 + class

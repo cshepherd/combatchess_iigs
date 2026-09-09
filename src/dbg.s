@@ -2328,7 +2328,7 @@ s_r_range       asc 'OUT OF RANGE'
                 dfb 0
 s_r_no_ammo     asc 'NO AMMUNITION'
                 dfb 0
-s_r_already     asc 'ALREADY FIRED AT THAT UNIT THIS TURN'
+s_r_already     asc 'ALREADY FIRED THERE THIS TURN'
                 dfb 0
 s_r_over        asc 'THE GAME IS OVER'
                 dfb 0

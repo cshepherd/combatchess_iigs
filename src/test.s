@@ -3540,7 +3540,8 @@ t_illegal  ds 1
 * is not refused as already shot at (1); a miss leaves the
 * bridge (9); no ammo (1); through the turn layer: not the
 * black car's turn, then the tank's shot counts and the
-* the bridge worn to water over four shots (7). 55 checks.
+* a bridge: one hit a turn (spec 13 refuses a repeat), worn to
+* clear ground over four turns (8). 56 checks.
 *----------------------------------------------------------
 test_fire_at
  MX %11
@@ -3817,7 +3818,7 @@ test_fire_at
  jsr check_eq
  lda #0
  sta stub_value
-* the 15-HP bridge takes four tank shots (4 damage each)
+* one shot damages the 15-HP bridge (4) but does not fell it
  lda #TN_OK
  sta expect
  lda #0
@@ -3831,28 +3832,45 @@ test_fire_at
  ldy #7
  jsr get_cell
  jsr check_eq              ; still a bridge after one shot
- lda #0
- ldx #5
- ldy #7
- jsr turn_fire_at
- lda #0
- ldx #5
- ldy #7
- jsr turn_fire_at
- lda #0
- ldx #5
- ldy #7
- jsr turn_fire_at
- lda #4
+* a second shot at the same square this turn is refused (spec 13)
+ lda #FR_ALREADY
  sta expect
- lda turn_shots
- jsr check_eq              ; four shots taken
+ lda #0
+ ldx #5
+ ldy #7
+ jsr turn_fire_at
+ jsr check_eq
+ lda #TERR_BRIDGE
+ sta expect
+ ldx #5
+ ldy #7
+ jsr get_cell
+ jsr check_eq              ; unchanged: the repeat did nothing
+* three more shots, each a fresh turn, wear it down to clear ground
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ lda #0
+ ldx #5
+ ldy #7
+ jsr turn_fire_at
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ lda #0
+ ldx #5
+ ldy #7
+ jsr turn_fire_at
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ lda #0
+ ldx #5
+ ldy #7
+ jsr turn_fire_at
  lda #TERR_CLEAR
  sta expect
  ldx #5
  ldy #7
  jsr get_cell
- jsr check_eq              ; and now destroyed to clear ground
+ jsr check_eq              ; four hits over four turns: destroyed to clear ground
  rts
 
 *----------------------------------------------------------
