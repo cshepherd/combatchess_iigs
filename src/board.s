@@ -87,6 +87,14 @@ terrain_after
  dfb TERR_CLEAR,TERR_CLEAR,TERR_WATER,TERR_WATER,TERR_MOUNTAIN
  dfb TERR_WHITE,TERR_YELLOW,TERR_WHITE,TERR_PURPLE,TERR_BLACK
 
+* Terrain hit points of an EMPTY destructible square (spec
+* 23), by type. Worn down by fire and destroyed at zero, so a
+* bridge takes several armoured-car shots (15 / 4 = 4). From
+* the Atari HUD readout: TREE = 01, BRIDGE = 15. GREY is
+* UNVERIFIED. A square under a unit uses the unit's own
+* terrain HP (class-based) instead; this is the empty case.
+terr_max_hp dfb 0,1,0,15,0,0,0,8,0,0
+
 * Movement penalties by terrain type (spec 9.4, 19.1). The
 * manual says trees cost extra fuel and reduce the move
 * allowance but gives no numbers.
@@ -161,7 +169,13 @@ set_cell
  tax
  lda rt1
  sta board,x
+ phy
+ ldy rt1
+ lda terr_max_hp,y
+ sta terr_hp,x             ; keep the terrain hit points in step with the type
+ ply
  plx
+ lda rt1                   ; return the type, as destroy_cell and callers expect
  rts
 
 *----------------------------------------------------------
@@ -231,9 +245,16 @@ destroy_cell
 *----------------------------------------------------------
 board_fill
  MX %11
+ sta rt1                   ; fill type
+ tax
+ lda terr_max_hp,x
+ sta rt2                   ; its terrain hit points
  ldx #0
 :loop
+ lda rt1
  sta board,x
+ lda rt2
+ sta terr_hp,x
  inx
  cpx #BOARD_CELLS
  bne :loop
@@ -276,6 +297,8 @@ board_load_text
  bpl :find
  ldx #TERR_CLEAR
 :got
+ lda terr_max_hp,x
+ sta terr_hp,y
  txa
  sta board,y
  iny
@@ -338,3 +361,4 @@ occupant_clear
 * they are and rebuilds occupant from the unit list.
 board    ds BOARD_CELLS
 occupant ds BOARD_CELLS
+terr_hp  ds BOARD_CELLS   ; empty-square terrain hit points, current

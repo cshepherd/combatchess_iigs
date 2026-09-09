@@ -98,7 +98,7 @@ def capture(n, out, image):
         shot = a.screenshot()
         os.replace(shot, os.path.join(out, f"board{n:02d}.png"))
         a.monitor()
-        codes = a.read_mem(0x7A00, 220)
+        codes = a.read_mem(0x5740, 220)   # the terrain table (no units), for the look table
         hud = a.screen_text(0x1FB0, 40, 2)
         gtia = a.cmd("GTIA", 1.0)
         cols = dict(re.findall(r"(COLPF\d|COLBK)=\s*([0-9A-F]{2})", gtia))

@@ -3540,7 +3540,7 @@ t_illegal  ds 1
 * is not refused as already shot at (1); a miss leaves the
 * bridge (9); no ammo (1); through the turn layer: not the
 * black car's turn, then the tank's shot counts and the
-* bridge becomes water (4). 52 checks.
+* the bridge worn to water over four shots (7). 55 checks.
 *----------------------------------------------------------
 test_fire_at
  MX %11
@@ -3817,6 +3817,7 @@ test_fire_at
  jsr check_eq
  lda #0
  sta stub_value
+* the 15-HP bridge takes four tank shots (4 damage each)
  lda #TN_OK
  sta expect
  lda #0
@@ -3824,16 +3825,34 @@ test_fire_at
  ldy #7
  jsr turn_fire_at
  jsr check_eq
- lda #1
+ lda #TERR_BRIDGE
+ sta expect
+ ldx #5
+ ldy #7
+ jsr get_cell
+ jsr check_eq              ; still a bridge after one shot
+ lda #0
+ ldx #5
+ ldy #7
+ jsr turn_fire_at
+ lda #0
+ ldx #5
+ ldy #7
+ jsr turn_fire_at
+ lda #0
+ ldx #5
+ ldy #7
+ jsr turn_fire_at
+ lda #4
  sta expect
  lda turn_shots
- jsr check_eq
+ jsr check_eq              ; four shots taken
  lda #TERR_WATER
  sta expect
  ldx #5
  ldy #7
  jsr get_cell
- jsr check_eq
+ jsr check_eq              ; and now destroyed to water
  rts
 
 *----------------------------------------------------------

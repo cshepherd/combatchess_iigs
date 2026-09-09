@@ -86,7 +86,7 @@ each board at its untouched start with the default armies:
 | Files | Checklist item |
 |---|---|
 | `boardNN.png` (indexed PNG, 336 x 224) | 5: full board screenshot, boards 1-10 |
-| `boardNN_codes.txt` | 5: every terrain cell transcribed (raw codes) |
+| `boardNN_codes.txt` | 5, 16: the terrain table ($5740, no units) as raw codes; the IIGS look table (`board_art.s`) comes from these, so a cell a unit started on shows its terrain once the unit leaves, not a ghost of the unit |
 | `boardNN_ram.dat` | whole RAM at the start, for anything else later |
 | `reference/maps/boardNN.txt` | 16: 20 x 11 map in the text notation |
 | `reference/maps/boardNN_units.txt` | 16: unit placement layer |

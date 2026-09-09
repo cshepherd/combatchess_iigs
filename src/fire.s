@@ -322,7 +322,9 @@ fire_execute_at
  lda fr_chance
  jsr resolve_hit
  sta fr_roll
- bcc :miss
+ bcs :hit
+ jmp :miss
+:hit
  lda #EV_SHOT_HIT
  jsr fr_event
  lda fr_roll
@@ -330,11 +332,27 @@ fire_execute_at
  jsr event_push
  lda #1
  sta fr_shot_hit
+* wear down the square's terrain hit points; destroy it only
+* when they reach zero (spec 23), so a bridge takes several
+* shots while a tree (1 HP) still falls to one
+ ldx fr_tx
+ ldy fr_ty
+ jsr cell_index
+ tax                       ; X = cell index
+ lda terr_hp,x
+ sec
+ sbc fr_damage
+ bcs :hpok
+ lda #0
+:hpok
+ sta terr_hp,x
+ bne :stands
+* destroyed
  ldx fr_tx
  ldy fr_ty
  jsr get_cell
  sta fr_terr_type
- jsr destroy_cell          ; validated destructible
+ jsr destroy_cell
  sta ev_p3                 ; the new type
  lda #EV_TERRAIN_DESTROYED
  sta ev_type
@@ -344,6 +362,24 @@ fire_execute_at
  sta ev_p2
  stz ev_p4
  jsr event_push
+ bra :sqdone
+:stands
+ lda #EV_TERRAIN_DAMAGED
+ sta ev_type
+ lda fr_tx
+ sta ev_p0
+ lda fr_ty
+ sta ev_p1
+ ldx fr_tx
+ ldy fr_ty
+ jsr cell_index
+ tax
+ lda terr_hp,x
+ sta ev_p2                 ; terrain hit points left
+ stz ev_p3
+ stz ev_p4
+ jsr event_push
+:sqdone
  lda #FR_HIT
  sta fr_outcome
  lda #FR_OK
