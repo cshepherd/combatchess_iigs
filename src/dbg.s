@@ -1602,6 +1602,10 @@ shot_check
 *----------------------------------------------------------
 SHOT_HOLD   = 1            ; screen frames per pixel sub-step
 SHOT_CENTER = 4*SCREEN_ROW+2  ; a 4 x 8 box centred in the 16 x 16 cell
+SHOT_MISS_DY   = 16*SCREEN_ROW ; a miss shifts the box one whole tile in y
+SHOT_OVERSHOOT = 8         ; miss: sub-steps to sail on past the target
+SHOT_WIN_TOP   = SCREEN     ; overshoot must keep the box on the board:
+SHOT_WIN_BOT   = 168*SCREEN_ROW+SCREEN  ; its 8-row footprint within rows 0-175
 shot_wtab dfb 3,2,1        ; width in bytes by class: cruiser, tank, car
 shot_htab dfb 6,4,2        ; height in rows
 
@@ -1644,6 +1648,39 @@ draw_shot
  clc
  adc #SHOT_CENTER
  sta fr_addr               ; the box, centred in the attacker's square
+ lda fr_shot_hit
+ and #$00FF
+ bne :hit                  ; a hit lands dead centre, then explodes
+ lda #1
+ sta shot_miss
+* A miss flies one whole tile off in y and sails past. Shift
+* the flight up a tile, unless an endpoint sits on the top
+* row, when up would leave the board, so shift it down.
+ lda an_fy
+ and #$00FF
+ sta shot_fp               ; reuse as min(fy, ty) scratch
+ lda an_ty
+ and #$00FF
+ cmp shot_fp
+ bcs :havemin
+ sta shot_fp
+:havemin
+ lda shot_fp
+ beq :missdown             ; a top-row endpoint: shift down instead
+ lda fr_addr
+ sec
+ sbc #SHOT_MISS_DY
+ sta fr_addr
+ bra :prime
+:missdown
+ lda fr_addr
+ clc
+ adc #SHOT_MISS_DY
+ sta fr_addr
+ bra :prime
+:hit
+ stz shot_miss
+:prime
  jsr shot_save
  jsr shot_paint
 :seg
@@ -1669,7 +1706,37 @@ draw_shot
  bne :sub
  bra :seg
 :done
- jsr shot_restore          ; remove the projectile at the target
+ lda shot_miss
+ and #$00FF
+ beq :fin                  ; a hit: stop on the target for the explosion
+* A miss keeps flying in the same direction, sailing past the
+* target, until it has crossed SHOT_OVERSHOOT sub-steps or is
+* about to leave the board (rows 0-175).
+ lda #SHOT_OVERSHOOT
+ sta shot_sub
+:osub
+ lda fr_addr
+ clc
+ adc anim_delta
+ cmp #SHOT_WIN_TOP
+ bcc :fin                  ; off the top -> stop
+ cmp #SHOT_WIN_BOT
+ bcs :fin                  ; off the bottom -> stop
+ pha
+ jsr shot_restore          ; lift the box from where it was
+ pla
+ sta fr_addr
+ jsr shot_save
+ jsr shot_paint
+ ldx #SHOT_HOLD
+:ohold
+ jsr wait_vbl
+ dex
+ bne :ohold
+ dec shot_sub
+ bne :osub
+:fin
+ jsr shot_restore          ; remove the projectile
  rts
 
 * shot_paint - draw the shot_w x shot_h box, in white, centred
@@ -2445,6 +2512,7 @@ shot_h       ds 2
 shot_fp      ds 2
 shot_bg_addr ds 2
 shot_sub     ds 2
+shot_miss    ds 2
 shot_buf     ds 32         ; 4 x 8 background save (4 bytes x 8 rows)
 clk_top      ds 2
 msg_ptr    ds 2
