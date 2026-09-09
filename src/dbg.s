@@ -93,6 +93,7 @@ dbg_init
  sep #$20
  MX %10
  stz mv_moved             ; no pending slide at the start
+ stz fr_shot              ; no pending explosion
  rep #$20
  MX %00
  lda #1
@@ -115,6 +116,7 @@ dbg_run
  MX %00
 :loop
  jsr anim_check            ; slide a unit that just moved, before its square is drawn
+ jsr shot_check            ; fly a shot that was just fired, then explode on a hit
  lda dirty
  beq :clock
  stz dirty
@@ -1505,6 +1507,278 @@ dbg_text
 
 phase_names da s_ph_any,s_ph_fire,s_ph_move
 
+*----------------------------------------------------------
+* shot_check - if a shot was just fired (fr_shot), fly the
+* projectile from the attacker to the target, then flash an
+* explosion on the target if it hit, before the redraw.
+*----------------------------------------------------------
+shot_check
+ MX %00
+ lda fr_shot
+ and #$00FF
+ bne :go
+ rts
+:go
+ sep #$20
+ MX %10
+ stz fr_shot
+ rep #$20
+ MX %00
+ jsr draw_shot             ; the projectile travels attacker -> target
+ lda fr_shot_hit
+ and #$00FF
+ beq :nohit
+ lda fr_shot_tx
+ and #$00FF
+ sta cx
+ lda fr_shot_ty
+ and #$00FF
+ sta cy
+ jsr draw_explosion
+:nohit
+ lda #1
+ sta dirty
+ rts
+
+*----------------------------------------------------------
+* draw_shot - fly a small box from the attacker's square to
+* the target's, along the (straight) line of fire. Its size
+* grows with the attacker's class (armoured car < tank <
+* Battle Cruiser), in white. Uses a 4 x 8 save buffer so it
+* leaves no trail, like the move slide.
+*----------------------------------------------------------
+SHOT_HOLD   = 1            ; screen frames per pixel sub-step
+SHOT_CENTER = 4*SCREEN_ROW+2  ; a 4 x 8 box centred in the 16 x 16 cell
+shot_wtab dfb 3,2,1        ; width in bytes by class: cruiser, tank, car
+shot_htab dfb 6,4,2        ; height in rows
+
+draw_shot
+ MX %00
+ lda fr_shot_fx
+ and #$00FF
+ sta an_fx
+ lda fr_shot_fy
+ and #$00FF
+ sta an_fy
+ lda fr_shot_tx
+ and #$00FF
+ sta an_tx
+ lda fr_shot_ty
+ and #$00FF
+ sta an_ty
+ jsr anim_setup            ; anim_delta, anim_segs
+ lda anim_segs
+ bne :go
+ rts                       ; attacker on the target (should not happen)
+:go
+ lda fr_shot_class
+ and #$00FF
+ tax
+ lda shot_wtab,x
+ and #$00FF
+ sta shot_w
+ lda shot_htab,x
+ and #$00FF
+ sta shot_h
+ lda fr_shot_fx
+ and #$00FF
+ sta cx
+ lda fr_shot_fy
+ and #$00FF
+ sta cy
+ jsr cell_addr
+ lda fr_addr
+ clc
+ adc #SHOT_CENTER
+ sta fr_addr               ; the box, centred in the attacker's square
+ jsr shot_save
+ jsr shot_paint
+:seg
+ lda anim_segs
+ beq :done
+ dec anim_segs
+ lda #8
+ sta shot_sub
+:sub
+ jsr shot_restore
+ lda fr_addr
+ clc
+ adc anim_delta
+ sta fr_addr
+ jsr shot_save
+ jsr shot_paint
+ ldx #SHOT_HOLD
+:hold
+ jsr wait_vbl
+ dex
+ bne :hold
+ dec shot_sub
+ bne :sub
+ bra :seg
+:done
+ jsr shot_restore          ; remove the projectile at the target
+ rts
+
+* shot_paint - draw the shot_w x shot_h box, in white, centred
+* in the 4 x 8 footprint whose top-left is fr_addr.
+shot_paint
+ MX %00
+ lda fr_addr
+ sta shot_fp
+ lda #COL_WHITE
+ jsr set_fill_colour
+ lda shot_w
+ and #$00FF
+ sta fr_w
+ lda shot_h
+ and #$00FF
+ sta fr_h
+ lda #8
+ sec
+ sbc fr_h
+ lsr
+ jsr rows_to_offset
+ clc
+ adc shot_fp
+ sta fr_addr
+ lda #4
+ sec
+ sbc fr_w
+ lsr
+ clc
+ adc fr_addr
+ sta fr_addr
+ jsr fill_rect
+ lda shot_fp
+ sta fr_addr
+ rts
+
+* shot_save / shot_restore - save and restore the 4 x 8 pixels
+* (4 bytes x 8 rows) under the projectile, using shot_buf.
+shot_save
+ MX %00
+ lda fr_addr
+ sta shot_bg_addr
+ sta anim_ptr
+ ldy #0
+ lda #8
+ sta anim_rows
+:row
+ ldx anim_ptr
+ ldal $E10000,x
+ sta shot_buf,y
+ ldal $E10002,x
+ sta shot_buf+2,y
+ tya
+ clc
+ adc #4
+ tay
+ lda anim_ptr
+ clc
+ adc #SCREEN_ROW
+ sta anim_ptr
+ dec anim_rows
+ bne :row
+ rts
+
+shot_restore
+ MX %00
+ lda shot_bg_addr
+ sta anim_ptr
+ ldy #0
+ lda #8
+ sta anim_rows
+:row
+ ldx anim_ptr
+ lda shot_buf,y
+ stal $E10000,x
+ lda shot_buf+2,y
+ stal $E10002,x
+ tya
+ clc
+ adc #4
+ tay
+ lda anim_ptr
+ clc
+ adc #SCREEN_ROW
+ sta anim_ptr
+ dec anim_rows
+ bne :row
+ rts
+
+*----------------------------------------------------------
+* draw_explosion - a burst over the square (cx, cy): centred
+* filled boxes growing to a peak and shrinking, in a hot
+* white/yellow/orange/red ramp (palette slots 9, 12, 14 are
+* set bright for the burst and restored after). The cell
+* background is saved and restored like the move slide, so it
+* leaves no mark; draw_all then repaints the aftermath.
+*----------------------------------------------------------
+EXPL_HOLD = 3              ; screen frames per burst step
+EXPL_N    = 7
+expl_w   dfb 1,3,5,6,5,3,1        ; width in bytes (2 px each), centred
+expl_h   dfb 2,6,11,15,11,6,2     ; height in rows
+expl_col dfb COL_WHITE,8,12,14,12,8,COL_WHITE   ; 8 yellow, 12 orange, 14 red
+
+draw_explosion
+ MX %00
+ lda #$0FF0
+ stal $E19E10              ; slot 8 -> bright yellow  (E19E00 + 16)
+ lda #$0F80
+ stal $E19E18              ; slot 12 -> orange        (+24)
+ lda #$0F00
+ stal $E19E1C              ; slot 14 -> bright red     (+28)
+ jsr cell_addr             ; fr_addr = the cell's top-left
+ lda fr_addr
+ sta expl_cell
+ jsr anim_save             ; save the cell background
+ stz expl_i
+:frame
+ jsr anim_restore
+ ldx expl_i
+ lda expl_col,x
+ and #$00FF
+ jsr set_fill_colour
+ lda expl_w,x
+ and #$00FF
+ sta fr_w
+ lda expl_h,x
+ and #$00FF
+ sta fr_h
+ lda #16
+ sec
+ sbc fr_h
+ lsr                       ; (16 - h) / 2 rows above
+ jsr rows_to_offset
+ clc
+ adc expl_cell
+ sta fr_addr
+ lda #8
+ sec
+ sbc fr_w
+ lsr                       ; (8 - w) / 2 bytes left
+ clc
+ adc fr_addr
+ sta fr_addr
+ jsr fill_rect
+ ldx #EXPL_HOLD
+:hold
+ jsr wait_vbl
+ dex
+ bne :hold
+ inc expl_i
+ lda expl_i
+ cmp #EXPL_N
+ bcc :frame
+ jsr anim_restore          ; clear the burst
+ lda dbg_palette+16
+ stal $E19E10              ; restore slots 8, 12, 14
+ lda dbg_palette+24
+ stal $E19E18
+ lda dbg_palette+28
+ stal $E19E1C
+ rts
+
 ANIM_SUBS = 8              ; pixel sub-steps per square (a square is 16 px, 2 px a step)
 ANIM_FRAMES = 2            ; screen frames held per sub-step
 
@@ -1574,6 +1848,18 @@ anim_check
  MX %00
  jsr art_draw_board
 * the per-step screen delta and the number of squares
+ lda mv_last_fx
+ and #$00FF
+ sta an_fx
+ lda mv_last_fy
+ and #$00FF
+ sta an_fy
+ lda mv_last_tx
+ and #$00FF
+ sta an_tx
+ lda mv_last_ty
+ and #$00FF
+ sta an_ty
  jsr anim_setup
 * draw the glyph at the start square, saving the background
  lda mv_last_fx
@@ -1699,10 +1985,10 @@ anim_restore
 anim_setup
  MX %00
  stz anim_delta
- lda mv_last_tx
+ lda an_tx
  and #$00FF
  sec
- sbc mv_last_fx            ; tx - fx  (fx high byte 0)
+ sbc an_fx                 ; tx - fx  (fx high byte 0)
  and #$00FF
  sta anim_dx
  beq :ysetup               ; no x motion (Z from the AND above)
@@ -1722,10 +2008,10 @@ anim_setup
  and #$00FF
  sta anim_dx               ; |dx|
 :ysetup
- lda mv_last_ty
+ lda an_ty
  and #$00FF
  sec
- sbc mv_last_fy
+ sbc an_fy
  and #$00FF
  sta anim_dy
  beq :segs                 ; no y motion (Z from the AND above)
@@ -2095,6 +2381,18 @@ anim_bg_addr ds 2
 anim_ptr     ds 2
 anim_rows    ds 2
 anim_buf     ds 128        ; 16 x 16 background save (8 bytes x 16 rows)
+expl_cell    ds 2
+expl_i       ds 2
+an_fx        ds 1
+an_fy        ds 1
+an_tx        ds 1
+an_ty        ds 1
+shot_w       ds 2
+shot_h       ds 2
+shot_fp      ds 2
+shot_bg_addr ds 2
+shot_sub     ds 2
+shot_buf     ds 32         ; 4 x 8 background save (4 bytes x 8 rows)
 msg_ptr    ds 2
 key_code   ds 2
 key_vec    ds 2

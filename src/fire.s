@@ -216,7 +216,9 @@ fire_check_line
 fire_execute
  MX %11
  jsr fire_validate
- bcc :done
+ bcs :ok
+ rts                       ; invalid: carry clear, A = reason
+:ok
  ldx fr_attacker
  dec unit_ammo,x
  inc unit_shots,x
@@ -225,6 +227,21 @@ fire_execute
  jsr unit_mark_fired_at
  lda #EV_SHOT_FIRED
  jsr fr_event              ; attacker, target
+ lda #1
+ sta fr_shot               ; the display flies a shot, then explodes on a hit
+ stz fr_shot_hit
+ ldx fr_attacker
+ lda unit_x,x
+ sta fr_shot_fx
+ lda unit_y,x
+ sta fr_shot_fy
+ lda unit_class,x
+ sta fr_shot_class
+ ldx fr_target
+ lda unit_x,x
+ sta fr_shot_tx
+ lda unit_y,x
+ sta fr_shot_ty
  lda fr_chance
  jsr resolve_hit
  sta fr_roll
@@ -234,6 +251,8 @@ fire_execute
  lda fr_roll
  sta ev_p2
  jsr event_push
+ lda #1
+ sta fr_shot_hit
  ldx fr_target
  lda fr_damage
  jsr unit_take_hit
@@ -271,7 +290,9 @@ fire_execute
 fire_execute_at
  MX %11
  jsr fire_validate_at
- bcc :done
+ bcs :ok
+ rts                       ; invalid: carry clear, A = reason
+:ok
  lda fr_target
  cmp #FR_SQUARE
  beq :square
@@ -284,6 +305,20 @@ fire_execute_at
  inc unit_shots,x
  lda #EV_SHOT_FIRED
  jsr fr_event
+ lda #1
+ sta fr_shot
+ stz fr_shot_hit
+ ldx fr_attacker
+ lda unit_x,x
+ sta fr_shot_fx
+ lda unit_y,x
+ sta fr_shot_fy
+ lda unit_class,x
+ sta fr_shot_class
+ lda fr_tx
+ sta fr_shot_tx
+ lda fr_ty
+ sta fr_shot_ty
  lda fr_chance
  jsr resolve_hit
  sta fr_roll
@@ -293,6 +328,8 @@ fire_execute_at
  lda fr_roll
  sta ev_p2
  jsr event_push
+ lda #1
+ sta fr_shot_hit
  ldx fr_tx
  ldy fr_ty
  jsr get_cell
@@ -485,3 +522,10 @@ fr_terr_old  ds 1
 fr_terr_type ds 1
 fr_tx        ds 1          ; the square of a square shot
 fr_ty        ds 1
+fr_shot      ds 1          ; a shot was fired; the display flies it and explodes on a hit, then clears this
+fr_shot_hit  ds 1          ; the shot hit (draw an explosion at the target)
+fr_shot_fx   ds 1          ; the attacker's square
+fr_shot_fy   ds 1
+fr_shot_tx   ds 1          ; the target square
+fr_shot_ty   ds 1
+fr_shot_class ds 1         ; the attacker's class, for the shot's size
