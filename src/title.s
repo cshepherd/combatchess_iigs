@@ -766,7 +766,7 @@ s_help2      asc 'S OR RIGHT: NEXT VALUE    LEFT: PREVIOUS'
              dfb 0
 s_help3      asc 'RETURN: BACK TO THE TITLE'
              dfb 0
-s_help4      asc 'NO AI YET: THE COMPUTER SETTING IS IGNORED'
+s_help4      asc 'THE COMPUTER PLAYS THE CHOSEN SIDE(S)'
              dfb 0
 
 * Number buffers: up to two digits and a terminator.

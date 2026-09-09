@@ -90,6 +90,8 @@ dbg_init
  sta last_sec
  stz msg_ptr
  stz status_view
+ lda #1
+ sta ai_delay             ; the computer's first action comes quickly
  lda #HUD_TOP
  sta hud_top
  jsr hud_defaults
@@ -114,6 +116,7 @@ dbg_run
 :clock
  jsr update_clock
  jsr wait_vbl
+ jsr ai_maybe_step         ; a computer side plays itself
  lda inject_key            ; a debugger can poke a key here
  beq :keyboard
  stz inject_key
@@ -1496,6 +1499,46 @@ dbg_text
 
 phase_names da s_ph_any,s_ph_fire,s_ph_move
 
+AI_DELAY = 10              ; frames between the computer's actions, for watchability
+
+*----------------------------------------------------------
+* ai_maybe_step - once a frame: if the side to move is a
+* computer side and the game is running, let it take one
+* action every AI_DELAY frames and ask for a redraw.
+*----------------------------------------------------------
+ai_maybe_step
+ MX %00
+ lda game_result
+ and #$00FF
+ bne :ret
+ lda paused
+ and #$00FF
+ bne :ret
+ lda active_side
+ and #$00FF
+ tax
+ lda cpu_side,x
+ and #$00FF
+ beq :ret                  ; a human plays this side
+ dec ai_delay
+ bne :ret
+ lda #AI_DELAY
+ sta ai_delay
+ jsr eng_ai_step
+ lda #1
+ sta dirty
+:ret
+ rts
+
+eng_ai_step
+ MX %00
+ sep #$30
+ MX %11
+ jsr ai_step
+ rep #$30
+ MX %00
+ rts
+
 *----------------------------------------------------------
 * Engine wrappers: 16-bit in, 8-bit call, 16-bit out. A
 * results come back masked; carry passes straight through.
@@ -1779,6 +1822,7 @@ hud_y      ds 2
 hud_x      ds 2
 hud_val    ds 2
 hud_shown  ds 4            ; each side's remembered unit, a word per side
+ai_delay   ds 2
 msg_ptr    ds 2
 key_code   ds 2
 key_vec    ds 2

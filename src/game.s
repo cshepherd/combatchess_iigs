@@ -62,7 +62,7 @@
 * UNVERIFIED whether the original drops the same ones. Larger
 * armies cannot be placed until their positions are captured,
 * so counts above the captured units are ignored.
-* cfg_computer is stored but not acted on: no AI yet.
+* cfg_computer picks which sides the computer plays (ai.s).
 *----------------------------------------------------------
 setup_game
  MX %11
@@ -130,6 +130,28 @@ setup_game
  sta opt_time_minutes+SIDE_RED
  lda cfg_time_black
  sta opt_time_minutes+SIDE_BLACK
+* who the computer plays (spec 29.4), from cfg_computer
+ stz cpu_side+SIDE_RED
+ stz cpu_side+SIDE_BLACK
+ lda cfg_computer
+ cmp #CFG_CPU_BOTH
+ bne :notboth
+ lda #1
+ sta cpu_side+SIDE_RED
+ sta cpu_side+SIDE_BLACK
+ bra :cpudone
+:notboth
+ cmp #CFG_CPU_NONE
+ beq :cpudone
+ cmp #CFG_CPU_RED
+ bne :cpublack
+ lda #1
+ sta cpu_side+SIDE_RED
+ bra :cpudone
+:cpublack
+ lda #1
+ sta cpu_side+SIDE_BLACK
+:cpudone
  jsr sys_tick
  lda now_tick
  sta rt0
@@ -154,6 +176,7 @@ setup_game
   put rng
   put fire
   put turn
+  put aiplayer
 
 * The captured boards (generated).
   put boards

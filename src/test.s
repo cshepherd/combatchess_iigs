@@ -192,6 +192,14 @@
   sta sec_name+1
   jsr section_end
 
+  jsr section_begin
+  jsr test_ai
+  lda #<s_sec_ai
+  sta sec_name
+  lda #>s_sec_ai
+  sta sec_name+1
+  jsr section_end
+
 * Grand total: a "section" that started from zero.
   stz sec_pass
   stz sec_pass+1
@@ -3829,6 +3837,97 @@ test_fire_at
  rts
 
 *----------------------------------------------------------
+* Section 18 - the computer player's decision core (ai.s):
+* a red tank at (5,5) and a red car at (2,5) with the black
+* cruiser, killable in one tank hit, at (6,5), Red to move.
+* side_is_cpu reads cpu_side (2); ai_enemy_cruiser finds the
+* black cruiser (3); ai_find_shot picks the tank's shot at it
+* (3); ai_find_move advances the car, the only unit that can
+* get nearer (2). 10 checks.
+*----------------------------------------------------------
+test_ai
+ MX %11
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ jsr events_clear
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_TANK
+ ldx #5
+ ldy #5
+ jsr add_unit              ; id 0
+ lda #CLASS_CAR
+ ldx #2
+ ldy #5
+ jsr add_unit              ; id 1
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #6
+ ldy #5
+ jsr add_unit              ; id 11
+ lda #3
+ sta unit_hp+11            ; the tank's 4 damage destroys it
+ lda #SIDE_RED
+ sta active_side
+* side_is_cpu
+ lda #1
+ sta cpu_side+SIDE_BLACK
+ stz cpu_side+SIDE_RED
+ lda #0
+ sta expect
+ ldx #SIDE_RED
+ jsr side_is_cpu
+ jsr check_eq
+ lda #1
+ sta expect
+ ldx #SIDE_BLACK
+ jsr side_is_cpu
+ jsr check_eq
+ stz cpu_side+SIDE_BLACK
+* ai_enemy_cruiser
+ jsr ai_enemy_cruiser
+ lda #0
+ rol
+ ldy #1
+ sty expect
+ jsr check_eq              ; carry set: found
+ lda #6
+ sta expect
+ lda ai_ecru_x
+ jsr check_eq
+ lda #5
+ sta expect
+ lda ai_ecru_y
+ jsr check_eq
+* ai_find_shot: the tank (id 0) at the cruiser (id 11)
+ jsr ai_find_shot
+ lda #1
+ sta expect
+ lda ai_have_shot
+ jsr check_eq
+ lda #0
+ sta expect
+ lda ai_best_atk
+ jsr check_eq
+ lda #11
+ sta expect
+ lda ai_best_tgt
+ jsr check_eq
+* ai_find_move: the car (id 1) is the only unit that can close in
+ jsr ai_find_move
+ lda #1
+ sta expect
+ lda ai_have_move
+ jsr check_eq
+ lda #1
+ sta expect
+ lda ai_best_mu
+ jsr check_eq
+ rts
+
+*----------------------------------------------------------
 * check_eq - One check: A must equal expect. Numbers the check,
 * tallies it, and remembers the first failing id.
 * 8-bit A/X/Y. Preserves X, Y and expect.
@@ -4002,6 +4101,8 @@ s_sec_turn   asc 'TURN SYSTEM'
              dfb 0
 s_sec_fire_at asc 'SQUARE FIRE'
              dfb 0
+s_sec_ai     asc 'COMPUTER'
+             dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0
 s_first_fail asc 'FIRST FAIL'
@@ -4018,4 +4119,5 @@ s_return     asc 'PRESS ANY KEY TO RETURN TO TITLE'
   put rng
   put fire
   put turn
+  put aiplayer
   put common
