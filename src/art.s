@@ -147,6 +147,21 @@ art_draw_cell
  lsr
  lsr                       ; colour register 0-3
 :colour
+ sta art_reg
+ jsr cell_addr
+ lda art_reg
+ jmp draw_glyph_addr
+
+*----------------------------------------------------------
+* draw_glyph_addr - draw glyph `glyph` (0-63) from
+* board_charset in colour register A (0-3) at the screen byte
+* offset in fr_addr, as 16 x 16 pixels (each 8 x 8 glyph
+* pixel doubled). Bank $E1. Native 16-bit. Clobbers A, X, Y.
+* The animator uses it to draw a moving unit off the cell
+* grid; art_draw_cell uses it after cell_addr.
+*----------------------------------------------------------
+draw_glyph_addr
+ MX %00
  asl
  asl
  asl
@@ -159,7 +174,6 @@ art_draw_cell
  asl
  asl
  sta art_gi                ; the glyph's first row in board_charset
- jsr cell_addr
  ldx fr_addr
  lda #8
  sta art_row
@@ -207,6 +221,7 @@ art_draw_cell
  rts
 
 * Colour register of each side's unit glyphs: Red 3, Black 0.
+* Colour register of each side's unit glyphs: Red 3, Black 0.
 side_glyph_reg dfb 3,0
 
 * Screen code for a square whose terrain type changed after
@@ -221,5 +236,6 @@ glyph        ds 2
 art_gi       ds 2
 art_bits     ds 2
 art_fgoff    ds 2
+art_reg      ds 2
 art_row      ds 2
 orig_terrain ds BOARD_CELLS

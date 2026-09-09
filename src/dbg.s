@@ -90,6 +90,11 @@ dbg_init
  sta last_sec
  stz msg_ptr
  stz status_view
+ sep #$20
+ MX %10
+ stz mv_moved             ; no pending slide at the start
+ rep #$20
+ MX %00
  lda #1
  sta ai_delay             ; the computer's first action comes quickly
  lda #HUD_TOP
@@ -109,6 +114,7 @@ dbg_init
 dbg_run
  MX %00
 :loop
+ jsr anim_check            ; slide a unit that just moved, before its square is drawn
  lda dirty
  beq :clock
  stz dirty
@@ -1499,6 +1505,259 @@ dbg_text
 
 phase_names da s_ph_any,s_ph_fire,s_ph_move
 
+ANIM_SUBS = 8              ; pixel sub-steps per square (a square is 16 px, 2 px a step)
+ANIM_FRAMES = 2            ; screen frames held per sub-step
+
+*----------------------------------------------------------
+* anim_check - if a unit just moved (mv_moved), slide its
+* glyph from the old square to the new one before the board
+* is redrawn, then let the redraw show the final position.
+*
+* The moving glyph is kept in anim_glyph (NOT the shared
+* `glyph`, which art_draw_cell overwrites). Each sub-step
+* restores the background under the glyph from a 16 x 16
+* save buffer (anim_buf) before drawing, so nothing smears:
+* the buffer is the source of truth for the pixels the glyph
+* covers. The unit is hidden at its destination while the
+* backdrop is drawn and during the whole slide, so it is
+* seen only where the animation puts it.
+*----------------------------------------------------------
+anim_check
+ MX %00
+ lda mv_moved
+ and #$00FF
+ bne :go
+ rts
+:go
+ sep #$20
+ MX %10
+ stz mv_moved
+ rep #$20
+ MX %00
+* the moving unit's glyph (class 1-3) and colour register
+ lda mv_last_unit
+ and #$00FF
+ tax
+ lda unit_class,x
+ and #$00FF
+ inc
+ sta anim_glyph
+ lda unit_side,x
+ and #$00FF
+ tax
+ lda side_glyph_reg,x
+ and #$00FF
+ sta anim_reg
+* hide the unit at its destination and draw the clean backdrop
+ lda mv_last_ty
+ and #$00FF
+ sta cy
+ asl
+ asl
+ sta tmp
+ asl
+ asl
+ clc
+ adc tmp                   ; ty*20
+ clc
+ adc mv_last_tx            ; + tx  (mv_last_tx high byte is 0)
+ and #$00FF
+ sta anim_idx
+ tax
+ lda occupant,x
+ and #$00FF
+ sta anim_saved
+ sep #$20
+ MX %10
+ stz occupant,x
+ rep #$20
+ MX %00
+ jsr art_draw_board
+* the per-step screen delta and the number of squares
+ jsr anim_setup
+* draw the glyph at the start square, saving the background
+ lda mv_last_fx
+ and #$00FF
+ sta cx
+ lda mv_last_fy
+ and #$00FF
+ sta cy
+ jsr cell_addr             ; fr_addr = the start square
+ jsr anim_save             ; anim_buf <- background here; anim_bg_addr = fr_addr
+ jsr anim_paint            ; draw anim_glyph at fr_addr
+:seg
+ lda anim_segs
+ beq :done
+ dec anim_segs
+ lda #ANIM_SUBS
+ sta anim_sub
+:sub
+ jsr anim_restore          ; erase: background back where the glyph is now
+ lda fr_addr
+ clc
+ adc anim_delta
+ sta fr_addr               ; step to the next sub-position
+ jsr anim_save             ; save the background there
+ jsr anim_paint            ; draw the glyph there
+ ldx #ANIM_FRAMES
+:hold
+ jsr wait_vbl
+ dex
+ bne :hold
+ dec anim_sub
+ bne :sub
+ bra :seg
+:done
+* the glyph rests on the destination square; restore state and
+* let the loop's draw_all repaint the final board
+ ldx anim_idx
+ sep #$20
+ MX %10
+ lda anim_saved
+ sta occupant,x
+ rep #$20
+ MX %00
+ lda #1
+ sta dirty
+ rts
+
+* anim_paint - draw anim_glyph in anim_reg at fr_addr.
+anim_paint
+ MX %00
+ lda anim_glyph
+ sta glyph
+ lda anim_reg
+ jmp draw_glyph_addr
+
+* anim_save - copy the 16 x 16 pixels (8 bytes x 16 rows) at
+* fr_addr on screen into anim_buf, and remember the address
+* in anim_bg_addr so anim_restore can put them back.
+anim_save
+ MX %00
+ lda fr_addr
+ sta anim_bg_addr
+ sta anim_ptr
+ ldy #0
+ lda #16
+ sta anim_rows
+:row
+ ldx anim_ptr
+ ldal $E10000,x
+ sta anim_buf,y
+ ldal $E10002,x
+ sta anim_buf+2,y
+ ldal $E10004,x
+ sta anim_buf+4,y
+ ldal $E10006,x
+ sta anim_buf+6,y
+ tya
+ clc
+ adc #8
+ tay
+ lda anim_ptr
+ clc
+ adc #SCREEN_ROW
+ sta anim_ptr
+ dec anim_rows
+ bne :row
+ rts
+
+* anim_restore - copy anim_buf back to the screen at
+* anim_bg_addr, erasing the glyph drawn there.
+anim_restore
+ MX %00
+ lda anim_bg_addr
+ sta anim_ptr
+ ldy #0
+ lda #16
+ sta anim_rows
+:row
+ ldx anim_ptr
+ lda anim_buf,y
+ stal $E10000,x
+ lda anim_buf+2,y
+ stal $E10002,x
+ lda anim_buf+4,y
+ stal $E10004,x
+ lda anim_buf+6,y
+ stal $E10006,x
+ tya
+ clc
+ adc #8
+ tay
+ lda anim_ptr
+ clc
+ adc #SCREEN_ROW
+ sta anim_ptr
+ dec anim_rows
+ bne :row
+ rts
+
+* anim_setup - from mv_last_f*/t*: anim_delta (the screen
+* byte offset per pixel sub-step, x by 1 byte and y by 2
+* rows) and anim_segs (squares to cross = max of the spans).
+anim_setup
+ MX %00
+ stz anim_delta
+ lda mv_last_tx
+ and #$00FF
+ sec
+ sbc mv_last_fx            ; tx - fx  (fx high byte 0)
+ and #$00FF
+ sta anim_dx
+ beq :ysetup               ; no x motion (Z from the AND above)
+ cmp #$0080
+ bcs :xneg                 ; negative
+ lda anim_delta
+ inc
+ sta anim_delta            ; +1 byte per sub (east)
+ bra :ysetup
+:xneg
+ lda anim_delta
+ dec
+ sta anim_delta            ; -1 byte per sub
+ lda anim_dx
+ eor #$00FF
+ inc
+ and #$00FF
+ sta anim_dx               ; |dx|
+:ysetup
+ lda mv_last_ty
+ and #$00FF
+ sec
+ sbc mv_last_fy
+ and #$00FF
+ sta anim_dy
+ beq :segs                 ; no y motion (Z from the AND above)
+ cmp #$0080
+ bcs :yneg
+ lda anim_delta
+ clc
+ adc #2*SCREEN_ROW
+ sta anim_delta            ; +2 rows per sub (south)
+ bra :segs
+:yneg
+ lda anim_delta
+ sec
+ sbc #2*SCREEN_ROW
+ sta anim_delta            ; -2 rows per sub
+ lda anim_dy
+ eor #$00FF
+ inc
+ and #$00FF
+ sta anim_dy
+:segs
+ lda anim_dx
+ and #$00FF
+ sta anim_segs
+ lda anim_dy
+ and #$00FF
+ cmp anim_segs
+ bcc :done
+ sta anim_segs             ; the larger of |dx|, |dy|
+:done
+ rts
+
 AI_DELAY = 10              ; frames between the computer's actions, for watchability
 
 *----------------------------------------------------------
@@ -1823,6 +2082,19 @@ hud_x      ds 2
 hud_val    ds 2
 hud_shown  ds 4            ; each side's remembered unit, a word per side
 ai_delay   ds 2
+anim_glyph   ds 2
+anim_reg     ds 2
+anim_saved   ds 2
+anim_idx     ds 2
+anim_dx      ds 2
+anim_dy      ds 2
+anim_delta   ds 2
+anim_segs    ds 2
+anim_sub     ds 2
+anim_bg_addr ds 2
+anim_ptr     ds 2
+anim_rows    ds 2
+anim_buf     ds 128        ; 16 x 16 background save (8 bytes x 16 rows)
 msg_ptr    ds 2
 key_code   ds 2
 key_vec    ds 2

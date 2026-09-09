@@ -144,11 +144,29 @@ move_execute
  lda ln_y1
  sta ev_p4
  jsr event_push
+ lda #1
+ sta mv_moved              ; for the display's slide animation
+ lda mv_unit
+ sta mv_last_unit
+ lda ev_p1
+ sta mv_last_fx
+ lda ev_p2
+ sta mv_last_fy
+ lda ev_p3
+ sta mv_last_tx
+ lda ev_p4
+ sta mv_last_ty
  lda #MV_OK
  sec
 :done
  rts
 
 mv_unit       ds 1
+mv_moved      ds 1         ; set by move_execute, cleared once the display animates it
+mv_last_unit  ds 1
+mv_last_fx    ds 1
+mv_last_fy    ds 1
+mv_last_tx    ds 1
+mv_last_ty    ds 1
 mv_cost       ds 1         ; fuel the validated move takes
 mv_fuel_after ds 1         ; fuel the unit would have left
