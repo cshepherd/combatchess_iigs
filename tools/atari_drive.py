@@ -20,10 +20,11 @@ memory, take F10 screenshots, continue.
 Key names: F1..F10, RETURN, ESC, SPACE, TAB, DELETE, UP DOWN LEFT
 RIGHT, single characters, or a raw macOS key code as an int.
 atari800's defaults: F2 OPTION, F3 SELECT, F4 START, F5 warm reset,
-F8 monitor, F10 screenshot; the joystick is the numeric keypad
-(KP8/KP2/KP4/KP6, fire = left/right Ctrl? see -kbdjoy options) unless
--joy-* remapped. Function keys are posted with the Fn flag so macOS
-does not treat them as media keys.
+F8 monitor, F10 screenshot. The keyboard joystick is off by default;
+launch with extra=("-nojoystick", "-kbdjoy0") to make port 0 the
+keypad (KP8/KP2/KP4/KP6 = up/down/left/right, Right Ctrl = trigger).
+Function keys are posted with the Fn flag and keypad keys with the
+numeric-pad flag, or macOS does not deliver them as expected.
 """
 import ctypes
 import ctypes.util
@@ -55,6 +56,7 @@ CHARS = {
     ",": 43, "/": 44, "n": 45, "m": 46, ".": 47, "`": 50,
 }
 FN_FLAG = 0x800000
+NUMPAD_FLAG = 0x200000       # kCGEventFlagMaskNumericPad
 SHIFT_FLAG = 0x20000
 
 _cg = ctypes.cdll.LoadLibrary(ctypes.util.find_library("ApplicationServices"))
@@ -127,6 +129,8 @@ class Atari:
         elif name.upper() in KEYCODES:
             up = name.upper()
             flags = FN_FLAG if up.startswith("F") and up[1:].isdigit() else 0
+            if up.startswith("KP"):
+                flags = NUMPAD_FLAG    # keypad keys carry this flag on macOS
             self._post(KEYCODES[up], flags, hold)
         elif len(name) == 1 and name.lower() in CHARS:
             flags = SHIFT_FLAG if name.isupper() else 0

@@ -172,10 +172,55 @@ terrain), presumably the destruction effect, still showing several
 seconds later. The trees at (2, 1) and (3, 2) there had just become
 clear squares.
 
-Still to capture (checklist A02-A06, 9-11, 13): title blink or
-colour-cycle states and the demonstration game, cursor states, HUD
-extremes, the firing effect and the destruction effect's timing,
-typography.
+## Cursor states (checklist section 9)
+
+`reference/raw/cursor/` from `tools/atari_cursor_capture.py`, which
+plays Red by hand: `cursor_sNN_*.png` walk the states with one stick
+push per step, `cursor_uNN_*.png` show the terrain the HUD names, and
+`cursor_states.json` / `cursor_terrain.json` record the display list,
+the player/missile colour shadows and the sprite shapes for each.
+
+The cursor is drawn with player/missile sprites, not the character
+set. PMBASE is $4000 (double-line resolution): missiles at $4180,
+players 0-3 at $4200, $4280, $4300, $4380. Two are used:
+
+- **Player 0** the box, `FF 81 81 81 81 81 81 81 81 81 81 FF` (an
+  8-wide hollow rectangle, 12 double-lines tall = one square), in
+  COLPM0 `$1C` yellow-green.
+- **Player 1** a white (COLPM1 `$0E`) inner shape that changes with
+  the state: a cross `0C 0C 3F 3F 0C 0C` while the cursor roams free,
+  gone once a friendly unit is triggered (the box alone), and a small
+  block `1E 1E 1E` after a trigger on a destination or target.
+
+So the three states are box + white cross (neutral / choosing a
+unit), box alone (a unit is chosen, choosing where), box + white mark
+(a square is triggered). This is looser than spec 26's "no cursor /
+box / cross"; the box is always shown and the white shape inside is
+what changes. How the game moves from the box state to a committed
+move or shot is UNVERIFIED: triggering an empty square in range did
+not visibly move the unit in these runs.
+
+The lower HUD's unit line doubles as a terrain readout: over an empty
+square it names the terrain and its hit points instead of a unit,
+`TREE      = 01`, `BRIDGE    = 15`, water `OK TO SHOOT ACROSS`, an
+out-of-reach square `IMPASSABLE`, and clear ground or mountains just
+the clock with no text. (For later HUD/terrain work; checklist H10.)
+
+ESC suspends the game to a `GAME SUSPENDED / PUSH ANY KEY TO
+CONTINUE` screen (display list $2B15, `cursor_s13_esc.png`); the game
+message table sits in RAM near $8B00 (`ARE YOU SURE YOU WANT TO END
+THE GAME BY CAPITULATION?`, etc.).
+
+Driving the joystick: atari800's keyboard joystick is off by default;
+run it with `-nojoystick -kbdjoy0`, and post the keypad keys (KP8/2/4/6
+directions, Right Ctrl trigger) with the numeric-pad event flag
+(`NUMPAD_FLAG` in `tools/atari_drive.py`) or macOS routes them
+elsewhere. The stick auto-repeats while held, so a capture uses one
+short push per step. The cursor's board index is the byte at $00BC.
+
+Still to capture (checklist A02-A06, 11, 13): title blink or
+colour-cycle states and the demonstration game, HUD extremes, the
+firing effect and the destruction effect's timing, typography.
 
 ## Unit records
 

@@ -1,0 +1,858 @@
+[
+ {
+  "step": "s01_start",
+  "note": "game start: the cursor on the Red cruiser, before any input; the stick does nothing yet",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:58 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 18,
+    "rows": [
+     "0C",
+     "0C",
+     "3F",
+     "3F",
+     "0C",
+     "0C"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s02_trigger",
+  "note": "trigger on the cruiser",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:54 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": null,
+    "rows": []
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s03_left",
+  "note": "stick left once",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:51 #  TREE      = 01",
+   "  20:00"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": null,
+    "rows": []
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s04_trigger",
+  "note": "trigger on the square left of the cruiser (a tree)",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:47 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 -  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 19,
+    "rows": [
+     "1E",
+     "1E",
+     "1E"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s05_down",
+  "note": "stick down once",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:44 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 -  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 19,
+    "rows": [
+     "1E",
+     "1E",
+     "1E"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s06_trigger",
+  "note": "trigger",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:40 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 18,
+    "rows": [
+     "0C",
+     "0C",
+     "3F",
+     "3F",
+     "0C",
+     "0C"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s07_down",
+  "note": "stick down once",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:37 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 18,
+    "rows": [
+     "0C",
+     "0C",
+     "3F",
+     "3F",
+     "0C",
+     "0C"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s08_right",
+  "note": "stick right once",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:33 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00 _  SQ=15, GM=30, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 18,
+    "rows": [
+     "0C",
+     "0C",
+     "3F",
+     "3F",
+     "0C",
+     "0C"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s09_trigger",
+  "note": "trigger",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:30 #  SQ=15, GM=30, AM=16, FL=240",
+   "  20:00"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": null,
+    "rows": []
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s10_right",
+  "note": "stick right once",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:26 #  SQ=12, GM=24, AM=16, FL=240",
+   "  20:00"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": null,
+    "rows": []
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s11_right",
+  "note": "stick right once",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:23 #  SQ=12, GM=24, AM=16, FL=240",
+   "  20:00"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": null,
+    "rows": []
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s12_trigger",
+  "note": "trigger",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:19 #  SQ=12, GM=24, AM=16, FL=240",
+   "  20:00 -  SQ=12, GM=24, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 19,
+    "rows": [
+     "1E",
+     "1E",
+     "1E"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s13_esc",
+  "note": "ESC",
+  "dlist": "$2B15",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:19 #  SQ=12, GM=24, AM=16, FL=240",
+   "  20:00 -  SQ=12, GM=24, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 19,
+    "rows": [
+     "1E",
+     "1E",
+     "1E"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s14_space",
+  "note": "SPACE after ESC",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:15 #  SQ=12, GM=24, AM=16, FL=240",
+   "  20:00 -  SQ=12, GM=24, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 19,
+    "rows": [
+     "1E",
+     "1E",
+     "1E"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s15_select",
+  "note": "SELECT (status screen)",
+  "dlist": "$4409",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:12 #  SQ=12, GM=24, AM=16, FL=240",
+   "  20:00 -  SQ=12, GM=24, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 19,
+    "rows": [
+     "1E",
+     "1E",
+     "1E"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ },
+ {
+  "step": "s16_select3",
+  "note": "SELECT twice more (back to the board)",
+  "dlist": "$2180",
+  "colpm": [
+   "$1C",
+   "$0E",
+   "$00",
+   "$00"
+  ],
+  "hud": [
+   "  19:06 #  SQ=12, GM=24, AM=16, FL=240",
+   "  20:00 -  SQ=12, GM=24, AM=16, FL=240"
+  ],
+  "shapes": {
+   "missiles": {
+    "first_row": null,
+    "rows": []
+   },
+   "p0": {
+    "first_row": 14,
+    "rows": [
+     "FF",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "81",
+     "FF"
+    ]
+   },
+   "p1": {
+    "first_row": 19,
+    "rows": [
+     "1E",
+     "1E",
+     "1E"
+    ]
+   },
+   "p2": {
+    "first_row": null,
+    "rows": []
+   },
+   "p3": {
+    "first_row": null,
+    "rows": []
+   }
+  }
+ }
+]

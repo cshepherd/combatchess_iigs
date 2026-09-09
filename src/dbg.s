@@ -14,9 +14,12 @@
 * rows, as on the Atari, then the original's two status lines
 * (see HUD below) and, on the border under them, the debug
 * board's own line: the last message, else the turn summary.
-* The cursor is a white outline (select), thick box (move) or
-* cross (fire). While a unit is selected, legal destinations
-* get an orange dot and legal targets (enemy units, and
+* The cursor is the original's yellow box (captured from its
+* player/missile sprites, reference/raw/cursor/): with a
+* white cross while roaming, the box alone once a friendly
+* unit is chosen, and a small white mark while aiming a shot.
+* While a unit is selected, legal destinations get an orange
+* dot and legal targets (enemy units, and
 * trees, bridges or grey squares to destroy) a cyan outline,
 * with the line of fire dotted to the target under the cursor.
 *
@@ -42,7 +45,7 @@ COL_BLACK    = 0
 COL_WHITE    = 6
 COL_HUD_BG   = 7           ; the status lines' grey, Atari $08
 COL_GREY     = 8
-COL_PURPLE   = 9
+COL_CURSOR   = 9           ; the original's yellow cursor box (Atari $1C)
 COL_HUD_BORDER = 10        ; the border under them, Atari $36
 COL_LTGREY   = 11
 COL_ORANGE   = 12
@@ -61,7 +64,7 @@ KEY_TAB    = $09
 
 dbg_palette
  dw $0000,$0555,$05C3,$0261,$026E,$0A63,$0EEE,$0666
- dw $0999,$093B,$0741,$0BBB,$0F92,$04DE,$0800,$0FFF
+ dw $0999,$0AB4,$0741,$0BBB,$0F92,$04DE,$0800,$0FFF
 
 *----------------------------------------------------------
 * dbg_init - Palette and display state. Native 16-bit.
@@ -929,14 +932,23 @@ draw_cursor
  beq :select
  cmp #MODE_MOVE
  beq :move
- lda #COL_TEXT
- jmp draw_cross
+* fire: the yellow box with a small white mark, the
+* original's C state (its player 1 shape $1E $1E $1E)
+ lda #COL_CURSOR
+ jsr draw_box1
+ lda #COL_WHITE
+ jmp draw_mark
 :select
- lda #COL_TEXT
- jmp draw_box1
+* roaming: the yellow box with a white cross, the original's
+* neutral state (player 1 shape $0C $0C $3F $3F $0C $0C)
+ lda #COL_CURSOR
+ jsr draw_box1
+ lda #COL_WHITE
+ jmp draw_cross
 :move
- lda #COL_TEXT
- jmp draw_box2
+* a chosen unit: the yellow box alone, the original's B state
+ lda #COL_CURSOR
+ jmp draw_box1
 
 * draw_box1 / draw_box2 - outline the cell at (cx, cy) in
 * colour A, one or two bytes thick.
@@ -1008,6 +1020,22 @@ draw_cross
  lda #CELL_H
  sta fr_h
  jmp fill_rect             ; vertical bar
+
+* draw_mark - a small filled square in the middle of (cx, cy)
+* in colour A: the original's fire/aim mark.
+draw_mark
+ MX %00
+ jsr set_fill_colour
+ jsr cell_addr
+ lda fr_addr
+ clc
+ adc #5*SCREEN_ROW+3
+ sta fr_addr
+ lda #2
+ sta fr_w
+ lda #6
+ sta fr_h
+ jmp fill_rect
 
 * draw_dot - a small mark in the middle of (cx, cy) in
 * colour A.
