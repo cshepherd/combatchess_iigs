@@ -41,6 +41,12 @@ CFG_CPU_BOTH    = 3
 * wait_key and the debug board loop both honour it.
 inject_key      = $1110  ; word
 
+* Sound samples (SOUNDS file) are loaded once into a Memory-Manager
+* bank; the base persists here across the title/game cycle so GAME
+* re-patches its parameter blocks each run without reloading.
+snd_blk         = $1120  ; long: base address of the loaded sample bank
+snd_loaded      = $1124  ; byte: nonzero once SOUNDS has been loaded
+
 * Heartbeat task record (see toolbox_init): 20 bytes the
 * firmware keeps a pointer to for the whole session, so it
 * sits outside every part, above the globals page.

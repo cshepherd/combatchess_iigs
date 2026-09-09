@@ -4,21 +4,23 @@
 * board art and before common.s. Native 16-bit like the rest
 * of the display layer.
 *
-* toolbox_init has already run _SoundStartUp (common.s), which
-* installs the free-form-synth interrupt handler. snd_init
-* generates the effect waveforms once into bank-0 buffers.
-* Each effect is a short 8-bit unsigned burst played one-shot
-* with _FFStartSound on its own generator and its own DOC RAM
-* region, so a cannon report and its explosion can overlap.
-* next_wave_ptr = 0 makes the tool stop the generator at the
-* end of the waveform (one-shot), and a $00 sample would halt
-* it early, so the waveforms are kept to $01-$FF. Character
-* comes from the playback frequency, length and volume, not
-* pitch, so nothing needs tuning by ear.
-*
-* If the machine has no DOC, _SoundStartUp failed and the
-* _FFStopSound/_FFStartSound calls just return an ignored
-* error, so the game runs mute rather than crashing.
+* toolbox_init has already run _SoundStartUp. The move, cannon
+* and explosion waveforms are ripped from the Atari original
+* (src/sound_samples.s, tools/gen_sound.py) as unsigned 8-bit
+* DOC waveforms and played with _FFStartSound, each on its own
+* generator and DOC RAM region so a cannon report and its
+* explosion overlap. wave_size is one byte less than the DOC
+* buffer, so the tool uses a single buffer (>= the buffer drops
+* it into SWAP/streaming, whose interrupt-driven refill loop
+* froze the machine for seconds). The tool still free-runs the
+* oscillator past the waveform's end, so snd_tick stops each
+* generator once the sample's own duration has elapsed - timed
+* from the 60 Hz _GetTick counter, not a per-loop tick, so the
+* stop lands on the sample's end however slow the game loop is
+* running (a per-loop countdown lagged to ~4.5 s behind a full
+* board redraw and left the oscillator screeching through DOC
+* RAM). The UI-feedback buzz is a small square wave built at
+* init. A missing DOC leaves the game mute rather than crashing.
 *----------------------------------------------------------
 FF_MODE = $01              ; free-form synthesiser mode byte
 
@@ -35,42 +37,44 @@ GEN_EXPLODE = 3
 GEN_UI      = 4
 
 *----------------------------------------------------------
-* snd_init - build the effect waveforms. Call once, native
-* 16-bit, after toolbox_init.
+* snd_load - point the parameter blocks at the ripped samples
+* the launcher (cc.s) loaded into bank $02 at boot. Called by
+* GAME each run (the param blocks reload with the part, but
+* snd_blk / snd_loaded in page $11 persist). Native 16-bit.
+*----------------------------------------------------------
+snd_load
+ MX %00
+ lda snd_loaded
+ and #$00FF
+ beq :ret                  ; never loaded (mute)
+ lda #snd_explode_wave_off
+ ldx #snd_pb_explode
+ jsr :one
+ lda #snd_move_wave_off
+ ldx #snd_pb_move
+ jsr :one
+ lda #snd_fire_wave_off
+ ldx #snd_pb_cannon
+ jsr :one
+:ret
+ rts
+* :one - A = sample offset in the bank, X = parameter block.
+* Writes wave_start (block base + offset) into the block.
+:one
+ clc
+ adc snd_blk
+ sta 0,x                   ; wave_start low word
+ lda snd_blk+2
+ sta 2,x                   ; wave_start bank
+ rts
+
+*----------------------------------------------------------
+* snd_init - build the UI-feedback buzz, seed the tick clock
+* and arm the per-frame stop. Call once, native 16-bit, after
+* snd_load.
 *----------------------------------------------------------
 snd_init
  MX %00
- lda #$A55A
- sta snd_seed
-* Broadband noise for the cannon and explosion (and a soft,
-* low-frequency version for movement). Two nonzero bytes at a
-* time; a $00 sample would halt the oscillator early.
- ldx #0
-:noise
- jsr snd_rand
- pha
- and #$00FF
- bne :lo_ok
- pla
- ora #$0001
- pha
-:lo_ok
- pla
- pha
- and #$FF00
- bne :hi_ok
- pla
- ora #$0100
- pha
-:hi_ok
- pla
- sta snd_noise,x
- inx
- inx
- cpx #SND_NOISE_LEN
- bcc :noise
-* A square-wave buzz for UI feedback, period 16 samples, so
-* it reads as a rough tone rather than noise.
  ldx #0
 :buzz
  txa
@@ -86,54 +90,116 @@ snd_init
  inx
  cpx #SND_BUZZ_LEN
  bcc :buzz
+* seed the last-seen tick so the first snd_tick delta is ~0
+ jsr snd_gettick
+ sta snd_last_tick
+ lda #snd_tick
+ sta snd_tick_vec               ; wait_vbl now stops finished effects
  rts
 
 *----------------------------------------------------------
-* snd_rand - a 16-bit xorshift PRNG for the noise. State in
-* snd_seed (nonzero). Returns A = next value. Native 16-bit.
+* snd_gettick - return (A) the low 16 bits of the 60 Hz
+* _GetTick counter. Native 16-bit; clobbers A.
 *----------------------------------------------------------
-snd_rand
+snd_gettick
  MX %00
- lda snd_seed
- sta snd_tmp
+ pha                       ; room for the Long result
+ pha
+ ldx #$2503
+ jsl TOOLBOX               ; _GetTick
+ pla                       ; low word
+ sta snd_now
+ pla                       ; high word (discard)
+ lda snd_now
+ rts
+
+*----------------------------------------------------------
+* snd_tick - called from wait_vbl every frame. Counts each
+* playing effect down by the real ticks elapsed since the
+* last call and stops its generator when the sample's own
+* duration is up (the tool free-runs a one-shot forever
+* otherwise). Native 16-bit; wait_vbl preserves the caller's
+* registers.
+*----------------------------------------------------------
+snd_tick
+ MX %00
+ jsr snd_gettick           ; A = now, snd_now = now
+ sec
+ sbc snd_last_tick         ; delta = now - last
+ cmp #$0100
+ bcc :dok
+ lda #$00FF                ; clamp a huge gap to 255 frames
+:dok
+ sta snd_delta
+ lda snd_now
+ sta snd_last_tick         ; remember for next time
+ sep #$30
+ MX %11
+ ldx #0                    ; effect / generator index 0..3
+:t
+ lda snd_cd,x
+ beq :next                 ; not playing
+ cmp snd_delta
+ bcc :stop                 ; countdown < elapsed -> done
+ beq :stop
+ sec
+ sbc snd_delta
+ sta snd_cd,x
+ bra :next
+:stop
+ lda snd_loopf,x           ; looping effect (the flight trill)?
+ beq :hardstop
+* re-trigger: replay the one-shot and re-arm, keeping the trill going
+ phx
+ txa
+ rep #$30
+ MX %00
+ and #$00FF
+ jsr snd_play_loop
+ sep #$30
+ MX %11
+ plx
+ bra :next
+:hardstop
+ stz snd_cd,x
+ phx                       ; save loop index (1 byte, 8-bit)
+ lda snd_gen8,x            ; generator number
+ rep #$30
+ MX %00
+ and #$00FF
+ tay
+ lda #$0001
+:sh
  asl
- asl
- asl
- asl
- asl
- asl
- asl                       ; x << 7
- eor snd_tmp               ; x ^= x << 7
- sta snd_tmp
- lsr
- lsr
- lsr
- lsr
- lsr
- lsr
- lsr
- lsr
- lsr                       ; x >> 9
- eor snd_tmp               ; x ^= x >> 9
- sta snd_tmp
- xba                       ; x << 8 (byte swap)
- and #$FF00
- eor snd_tmp               ; x ^= x << 8
- sta snd_seed
+ dey
+ bne :sh
+ pha                       ; 16-bit mask (1 << generator)
+ ldx #$0F08
+ jsl TOOLBOX               ; _FFStopSound
+ sep #$30
+ MX %11
+ plx
+:next
+ inx
+ cpx #4
+ bne :t
+ rep #$30
+ MX %00
  rts
 
 *----------------------------------------------------------
 * snd_play - play effect A (SFX_*). Stops that effect's
 * generator first so a re-trigger never hits gen-busy, then
-* _FFStartSound with the effect's parameter block. Native
-* 16-bit. Clobbers A, X, Y. Errors from a missing DOC are
-* ignored (the game stays mute).
+* _FFStartSound with the effect's parameter block, and arms
+* the stop countdown. Native 16-bit. Clobbers A, X, Y. Errors
+* from a missing DOC are ignored (the game stays mute).
 *----------------------------------------------------------
 snd_play
  MX %00
  and #$00FF
  asl
  tax
+ stx snd_fx                ; effect*2
  lda snd_gen_tab,x
  sta snd_gen
  lda snd_pb_tab,x
@@ -159,6 +225,72 @@ snd_play
  pha
  ldx #$0E08
  jsl TOOLBOX
+* arm the stop countdown (in ticks): the tool free-runs the
+* one-shot, so snd_tick halts the generator after the sample's
+* own duration, timed off _GetTick.
+ lda snd_fx
+ lsr                       ; effect index
+ tax
+ sep #$20
+ MX %10
+ lda snd_frames,x
+ sta snd_cd,x              ; one byte per effect (frames < 256)
+ stz snd_loopf,x           ; one-shot by default
+ rep #$20
+ MX %00
+ rts
+
+*----------------------------------------------------------
+* snd_play_loop - play effect A (SFX_*) and mark it looping, for
+* the shot-in-flight trill: snd_tick re-triggers the one-shot
+* each time its countdown expires (the tool cannot cleanly loop
+* a waveform), giving a repeating beep until snd_stop cuts it on
+* impact. Native 16-bit. Clobbers A, X, Y.
+*----------------------------------------------------------
+snd_play_loop
+ MX %00
+ pha                       ; save effect
+ jsr snd_play              ; play once + arm countdown (clears loopf)
+ pla
+ and #$00FF
+ tax
+ sep #$20
+ MX %10
+ lda #1
+ sta snd_loopf,x           ; mark looping so snd_tick re-triggers it
+ rep #$20
+ MX %00
+ rts
+
+*----------------------------------------------------------
+* snd_stop - halt effect A (SFX_*): clear its loop flag and
+* countdown, then _FFStopSound its generator. Native 16-bit.
+* Clobbers A, X, Y.
+*----------------------------------------------------------
+snd_stop
+ MX %00
+ and #$00FF
+ tax
+ phx                       ; effect (2 bytes)
+ asl
+ tay
+ lda snd_gen_tab,y
+ tay                       ; generator
+ lda #$0001
+:sh
+ asl
+ dey
+ bne :sh
+ pha
+ ldx #$0F08
+ jsl TOOLBOX               ; _FFStopSound(1 << generator)
+ plx                       ; effect
+ sep #$20
+ MX %10
+ stz snd_cd,x
+ stz snd_loopf,x
+ rep #$20
+ MX %00
  rts
 
 *----------------------------------------------------------
@@ -167,50 +299,66 @@ snd_play
 * address (word, page in the high byte), DOC buffer size code
 * (word, 0=256 .. 7=32768 bytes), next wave (long, 0 = one
 * shot), volume (word, 0-255 in the low byte). DOC regions do
-* not overlap, allowing for both oscillators of each pair.
+* not overlap.
 *----------------------------------------------------------
-snd_pb_move
- adrl snd_noise
- dw 512
- dw $0140                  ; low: a soft, deep tick
- dw $1000                  ; DOC $1000
- dw 1                      ; 512 bytes
- adrl 0
- dw $0070                  ; quiet, so moves do not nag
-snd_pb_cannon
- adrl snd_noise
- dw 1024
- dw $0500                  ; high: a sharp crack
- dw $2000                  ; DOC $2000
- dw 2                      ; 1024 bytes
- adrl 0
- dw $00E0
+* Size, DOC size code and playback frequency come from the
+* generator (sound_samples.s). wave_size is one less than the
+* DOC buffer (256<<code), strictly smaller, so the tool copies
+* the wave into a SINGLE buffer and plays it one-shot; wave_size
+* >= the buffer needs a second buffer and drops the tool into
+* SWAP/streaming, whose interrupt-driven DOC refill loop froze
+* the whole machine for ~8 s on the 16 KB blast. wave_start is
+* 0 here and patched by snd_load to the loaded sample bank plus
+* each sound's offset.
 snd_pb_explode
- adrl snd_noise
- dw 2048
- dw $0260                  ; mid: a longer boom
- dw $3000                  ; DOC $3000
- dw 3                      ; 2048 bytes
+ adrl 0                     ; the four-channel blast (patched)
+ dw snd_explode_wave_size
+ dw snd_explode_wave_freq
+ dw $0000                  ; DOC $0000 (16384 bytes)
+ dw snd_explode_wave_code
  adrl 0
  dw $00FF
+snd_pb_move
+ adrl 0                     ; the poly5 engine buzz (patched)
+ dw snd_move_wave_size
+ dw snd_move_wave_freq
+ dw $8000                  ; DOC $8000 (8192 bytes)
+ dw snd_move_wave_code
+ adrl 0
+ dw $00B0
+snd_pb_cannon
+ adrl 0                     ; the shot-in-flight trill (patched)
+ dw snd_fire_wave_size
+ dw $03E6                  ; 2.5 x snd_fire_wave_freq ($018F): high-pitched trill
+ dw $4000                  ; DOC $4000, in the 16 KB gap after the blast:
+                           ; the loop's free-run runs out into silence
+ dw snd_fire_wave_code
+ adrl 0                    ; one-shot; snd_tick re-triggers it for the trill
+ dw $00E0
 snd_pb_ui
  adrl snd_buzz
- dw 512
+ dw SND_BUZZ_LEN-1         ; < buffer -> single-buffer one-shot
  dw $02C0
- dw $5000                  ; DOC $5000
- dw 1                      ; 512 bytes
+ dw $C800                  ; DOC $C800 (512 bytes)
+ dw 1
  adrl 0
  dw $00A0
 
 snd_pb_tab  da snd_pb_move,snd_pb_cannon,snd_pb_explode,snd_pb_ui
 snd_gen_tab dw GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI
+snd_gen8    dfb GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI
+* frames each effect plays before snd_tick stops it (its own
+* duration; UI a short fixed buzz). All < 256.
+snd_frames  dfb snd_move_wave_frames,snd_fire_wave_frames,snd_explode_wave_frames,10
 
-SND_NOISE_LEN = 2048
 SND_BUZZ_LEN  = 512
 
-snd_seed  ds 2
-snd_tmp   ds 2
 snd_gen   ds 2
 snd_pbptr ds 2
-snd_noise ds SND_NOISE_LEN
-snd_buzz  ds SND_BUZZ_LEN
+snd_fx    ds 2
+snd_now   ds 2
+snd_last_tick ds 2
+snd_delta ds 2
+snd_cd    ds 4             ; one countdown byte per effect (ticks remaining)
+snd_loopf ds 4             ; per-effect: nonzero = re-trigger on expiry (trill)
+snd_buzz  ds SND_BUZZ_LEN+1

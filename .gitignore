@@ -27,3 +27,9 @@ reference/atari/*.zip
 # Atari RAM dumps and input recordings hold the copyrighted game program itself
 reference/raw/**/*_ram.dat
 reference/raw/**/*.rec
+
+# Captured effect audio and POKEY register dumps are derived from the
+# copyrighted game program; keep them out of the repo (the generated
+# src/sound_samples.s is the committed artifact, like the board art).
+reference/raw/**/*.wav
+reference/raw/effects/*.dat

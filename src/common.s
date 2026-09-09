@@ -36,11 +36,13 @@ toolbox_init
 
  ldx #$0203
  jsl TOOLBOX               ; _MTStartUp (tick counter, RTC)
- bcs tb_fail
+ bcc *+5
+ jmp tb_fail
 
  ldx #$020B
  jsl TOOLBOX               ; _IMStartUp (Int2Dec for on-screen numbers)
- bcs tb_fail
+ bcc *+5
+ jmp tb_fail
 
  pha                       ; result space
  pea $1000                 ; idTag: application
@@ -48,7 +50,10 @@ toolbox_init
  jsl TOOLBOX               ; _GetNewID
  pla
  sta myID
- bcs tb_fail
+ bcc *+5
+ jmp tb_fail
+
+ jsr snd_reserve_bank      ; protect bank $02 (SOUNDS samples)
 
 * Reserve $0800-$BEFF for ourselves.
  pha                       ; result space (handle high)
@@ -62,7 +67,8 @@ toolbox_init
  pea $0800                 ; location low word
  ldx #$0902
  jsl TOOLBOX               ; _NewHandle
- bcs tb_fail
+ bcc *+5
+ jmp tb_fail
  pla
  pla                       ; block is fixed; handle not needed
 
@@ -73,7 +79,8 @@ toolbox_init
  pha
  ldx #$0204
  jsl TOOLBOX               ; _QDStartUp
- bcs tb_fail
+ bcc *+5
+ jmp tb_fail
 
 * The game clock (spec 16.1) reads the 60 Hz tick counter
 * with _GetTick. That counter is only advanced by the Misc
@@ -98,11 +105,13 @@ toolbox_init
  pea HB_TASK               ; long pointer to the task record
  ldx #$1203
  jsl TOOLBOX               ; _SetHeartBeat
- bcs tb_fail
+ bcc *+5
+ jmp tb_fail
  pea $0002
  ldx #$2303
  jsl TOOLBOX               ; _IntSource: enable VBL interrupts
- bcs tb_fail
+ bcc *+5
+ jmp tb_fail
 
  jsr snd_toolstart
 
@@ -130,6 +139,26 @@ snd_toolstart
  pea SOUND_DP
  ldx #$0208
  jsl TOOLBOX               ; _SoundStartUp
+ rts
+
+* snd_reserve_bank - reserve bank $02, where the launcher loaded
+* the SOUNDS samples, so no tool overwrites them. Ignored if it
+* fails (no such bank -> the game runs mute). Native 16-bit.
+snd_reserve_bank
+ MX %00
+ pha
+ pha                       ; result space (handle)
+ pea $0001
+ pea $0000                 ; size $00010000 (whole bank)
+ lda myID
+ pha
+ pea $C000                 ; locked | fixed
+ pea $0002
+ pea $0000                 ; location $02/0000
+ ldx #$0902
+ jsl TOOLBOX               ; _NewHandle
+ pla
+ pla                       ; discard handle (base is known: $02/0000)
  rts
 
 * Heartbeat task record, copied to HB_TASK: link (filled by
@@ -435,4 +464,21 @@ wait_vbl
  bpl :lp2                  ; wait for next VBL to start
  rep $20
  MX %00
+* Per-frame sound maintenance, through a vector so it runs in
+* every loop (including the blocking move/shot animations) yet
+* stays out of TITLE and TEST. GAME points it at snd_tick;
+* elsewhere it is a no-op. Registers preserved for callers
+* that loop on wait_vbl (e.g. the animation hold counters).
+ phy
+ phx
+ pha
+ jsr snd_dispatch
+ pla
+ plx
+ ply
  rts
+snd_dispatch
+ jmp (snd_tick_vec)
+snd_noop
+ rts
+snd_tick_vec dw snd_noop

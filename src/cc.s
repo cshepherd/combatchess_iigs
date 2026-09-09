@@ -74,12 +74,17 @@ load_title
  stz $1100,x
  inx
  bne :zero_loop
-* Fall through: the JMP below lands in the relocated copy.
+* Continue in the relocated copy at $1000 before load_sounds
+* reads the SOUNDS file into $2000 (which would clobber this
+* bootstrap if we were still running from the load address).
+ jmp :set_title_path
 
 :set_title_path
+ jsr load_sounds
  ldx #>title_path
  lda #<title_path
  jmp load_and_run
+
 
 load_game
  sec
@@ -126,6 +131,55 @@ load_and_run
 
  jmp $2000
 
+*----------------------------------------------------------
+* load_sounds - once per boot, read the SOUNDS file (ripped
+* effect samples) into $2000 and block-move it to bank $02,
+* where GAME reads it. Done here, in ProDOS 8's clean boot
+* state, because the MLI crashes once the toolbox is up.
+* snd_blk / snd_loaded (page $11) tell GAME it is there. A
+* missing file just leaves the game mute. Reuses the OPEN /
+* READ / CLOSE parameter blocks below.
+*----------------------------------------------------------
+load_sounds
+ lda $1124                 ; snd_loaded
+ bne :done
+ lda #<snd_path
+ sta open_path
+ lda #>snd_path
+ sta open_path+1
+ jsr $BF00
+ dfb $C8                   ; OPEN
+ da open_pblock
+ bcs :done
+ lda open_ref
+ sta read_ref
+ sta close_ref
+ jsr $BF00
+ dfb $CA                   ; READ into $2000 (up to read_count, i.e. to EOF)
+ da read_pblock
+ jsr $BF00
+ dfb $CC                   ; CLOSE
+ da close_pblock
+ clc
+ xce                       ; native for the block move
+ rep #$30
+ ldx #$2000
+ ldy #$0000
+ lda read_xfer
+ dec
+ mvn $00,$02               ; $00/2000 -> $02/0000
+ phk
+ plb                       ; MVN left DBR = $02; restore bank 0 for the globals
+ sep #$30
+ sec
+ xce
+ lda #$02
+ sta $1122                 ; snd_blk+2 = bank $02 (rest pre-zeroed)
+ lda #1
+ sta $1124                 ; snd_loaded
+:done
+ rts
+
 mli_error
  sta mli_errcode           ; visible in a debugger after the QUIT
  jsr $BF00
@@ -167,6 +221,7 @@ mli_errcode  dfb 0
 title_path    str 'TITLE'
 game_path     str 'GAME'
 test_path     str 'TEST'
+snd_path      str 'SOUNDS'
 
 * The bootstrap copies exactly one page. Fail the build if
 * the launcher ever grows past $10FF.

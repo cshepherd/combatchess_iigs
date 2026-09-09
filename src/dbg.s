@@ -15,9 +15,10 @@
 * (see HUD below) and, on the border under them, the debug
 * board's own line: the last message, else the turn summary.
 * The cursor is the original's yellow box (captured from its
-* player/missile sprites, reference/raw/cursor/): with a
-* white cross while roaming, the box alone once a friendly
-* unit is chosen, and a small white mark while aiming a shot.
+* player/missile sprites, reference/raw/cursor/): with a small
+* white mark while roaming, the box alone once a friendly unit
+* is chosen, and a white crosshair while aiming a shot (over
+* the target square the cursor is on).
 * While a unit is selected, legal destinations get an orange
 * dot and legal targets (enemy units, and
 * trees, bridges or grey squares to destroy) a cyan outline,
@@ -947,21 +948,20 @@ draw_cursor
  beq :select
  cmp #MODE_MOVE
  beq :move
-* fire: the yellow box with a small white mark, the
-* original's C state (its player 1 shape $1E $1E $1E)
- lda #COL_CURSOR
- jsr draw_box1
- lda #COL_WHITE
- jmp draw_mark
-:select
-* roaming: the yellow box with a white cross, the original's
-* neutral state (player 1 shape $0C $0C $3F $3F $0C $0C)
+* fire: the yellow box with a white crosshair, aiming over the
+* target square the cursor is currently on
  lda #COL_CURSOR
  jsr draw_box1
  lda #COL_WHITE
  jmp draw_cross
+:select
+* roaming: the yellow box with a small white mark
+ lda #COL_CURSOR
+ jsr draw_box1
+ lda #COL_WHITE
+ jmp draw_mark
 :move
-* a chosen unit: the yellow box alone, the original's B state
+* a chosen unit: the yellow box alone
  lda #COL_CURSOR
  jmp draw_box1
 
@@ -1582,8 +1582,10 @@ shot_check
  rep #$20
  MX %00
  lda #SFX_CANNON
- jsr snd_play              ; the cannon report as the shot leaves
+ jsr snd_play_loop         ; a high trill for the whole flight
  jsr draw_shot             ; the projectile travels attacker -> target
+ lda #SFX_CANNON
+ jsr snd_stop              ; cut the trill the instant it lands
  lda fr_shot_hit
  and #$00FF
  beq :nohit

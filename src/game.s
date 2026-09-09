@@ -41,6 +41,7 @@
   rep $30
   MX %00
   jsr dbg_init
+  jsr snd_load
   jsr snd_init
   jsr dbg_run
 
@@ -188,6 +189,7 @@ setup_game
   put status_art
  put art
   put board_art
+  put sound_samples
   put sound
 
   put common

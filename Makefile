@@ -45,7 +45,7 @@ src/status_art.s: tools/gen_plaque.py reference/raw/status/status_own_mode7_7D2C
 src/board_art.s: tools/gen_board_art.py reference/raw/boards/board_charset.bin reference/raw/boards/boards_capture.json $(wildcard reference/raw/boards/board*_codes.txt) $(wildcard reference/raw/boards/board*.png)
 	python3 tools/gen_board_art.py
 
-out/game: src/status.s src/status_art.s src/art.s src/board_art.s src/sound.s
+out/game: src/status.s src/status_art.s src/art.s src/board_art.s src/sound.s src/sound_samples.s
 
 .PHONY: all package clean
 all: package
@@ -59,7 +59,7 @@ out/%: src/%.s $(SHARED)
 	cd src && merlin32 -V $*.s
 	mv src/$* out/$*
 
-$(IMGFILE): res/PRODOS $(BINS)
+$(IMGFILE): res/PRODOS res/sounds.bin $(BINS)
 	mkdir -p out
 	rm -f $(IMGFILE)
 	$(CADIUS) CREATEVOLUME $(IMGFILE) $(VOLNAME) 800KB --quiet
@@ -77,6 +77,10 @@ $(IMGFILE): res/PRODOS $(BINS)
 	cp out/game out/GAME\#FF2000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/GAME\#FF2000 --quiet
 	rm out/GAME\#FF2000
+	# Ripped sound-effect samples, loaded into a spare bank at game start.
+	cp res/sounds.bin out/SOUNDS\#060000
+	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/SOUNDS\#060000 --quiet
+	rm out/SOUNDS\#060000
 	# Rules self-tests: T on the title screen, or 00/1004g in KEGS.
 	cp out/test out/TEST\#FF2000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TEST\#FF2000 --quiet
