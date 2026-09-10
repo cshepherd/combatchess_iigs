@@ -80,7 +80,7 @@ load_title
  jmp :set_title_path
 
 :set_title_path
- jsr load_sounds
+ jsr load_res
  ldx #>title_path
  lda #<title_path
  jmp load_and_run
@@ -110,56 +110,60 @@ load_test
 load_and_run
  sta open_path
  stx open_path+1
-
- jsr $BF00
- dfb $C8                   ; OPEN
- da open_pblock
+ jsr mli_load
  bcs mli_error
- lda open_ref
- sta read_ref
- sta close_ref
-
- jsr $BF00
- dfb $CA                   ; READ
- da read_pblock
- bcs mli_error
-
- jsr $BF00
- dfb $CC                   ; CLOSE
- da close_pblock
- bcs mli_error
-
  jmp $2000
 
 *----------------------------------------------------------
-* load_sounds - once per boot, read the SOUNDS file (ripped
-* effect samples) into $2000 and block-move it to bank $02,
-* where GAME reads it. Done here, in ProDOS 8's clean boot
-* state, because the MLI crashes once the toolbox is up.
-* snd_blk / snd_loaded (page $11) tell GAME it is there. A
-* missing file just leaves the game mute. Reuses the OPEN /
-* READ / CLOSE parameter blocks below.
+* mli_load - OPEN the file named by open_path, READ up to
+* read_count bytes to $2000, CLOSE. Carry set only on an
+* OPEN error (nothing loaded); read_xfer holds the byte
+* count on success. Emulation mode, 8-bit M/X.
 *----------------------------------------------------------
-load_sounds
- lda $1124                 ; snd_loaded
- bne :done
- lda #<snd_path
- sta open_path
- lda #>snd_path
- sta open_path+1
+mli_load
  jsr $BF00
  dfb $C8                   ; OPEN
  da open_pblock
- bcs :done
+ bcs :err
  lda open_ref
  sta read_ref
  sta close_ref
  jsr $BF00
- dfb $CA                   ; READ into $2000 (up to read_count, i.e. to EOF)
+ dfb $CA                   ; READ into $2000 (up to read_count / EOF)
  da read_pblock
  jsr $BF00
  dfb $CC                   ; CLOSE
- da close_pblock
+ da close_pblock          ; returns carry clear on the normal path
+:err
+ rts
+
+*----------------------------------------------------------
+* load_res - once per boot, in ProDOS 8's clean state (the
+* MLI crashes once the toolbox is up), read each resource
+* into $2000 and block-move it to its bank: SOUNDS -> $02
+* (GAME reads it via snd_blk / snd_loaded), the NinjaTracker
+* player -> $03 and the title music module -> $04 (TITLE
+* plays them). A missing file is skipped, leaving that
+* feature silent. Guarded by res_done so a TITLE reload
+* (toolbox up, MLI unusable) never re-enters.
+*----------------------------------------------------------
+load_res
+ lda $1124                 ; snd_loaded doubles as the boot-once guard
+ bne :ret
+ lda #$02
+ sta $1122                 ; snd_blk+2 = bank $02 (SOUNDS is always shipped)
+ sta $1124                 ; snd_loaded (any nonzero); also the boot-once guard
+ ldx #$00
+:loop
+ lda res_tab,x
+ sta open_path
+ lda res_tab+1,x
+ sta open_path+1
+ lda res_tab+2,x
+ sta res_mvn+1             ; self-modify the MVN destination bank
+ phx
+ jsr mli_load
+ bcs :skip                 ; file absent: leave that resource silent
  clc
  xce                       ; native for the block move
  rep #$30
@@ -167,18 +171,33 @@ load_sounds
  ldy #$0000
  lda read_xfer
  dec
- mvn $00,$02               ; $00/2000 -> $02/0000
- phk
- plb                       ; MVN left DBR = $02; restore bank 0 for the globals
+res_mvn mvn $00,$00        ; $00/2000 -> bank/0000 (dest byte self-modified)
  sep #$30
  sec
  xce
- lda #$02
- sta $1122                 ; snd_blk+2 = bank $02 (rest pre-zeroed)
- lda #1
- sta $1124                 ; snd_loaded
-:done
+ phk
+ plb                       ; MVN left DBR = dest bank; restore bank 0
+:skip
+ plx
+ inx
+ inx
+ inx
+ cpx #$09                  ; 3 entries * 3 bytes
+ bcc :loop
+:ret
  rts
+
+*----------------------------------------------------------
+* Resource table: path pointer (word) then destination bank
+* (byte), one 3-byte entry per file, consumed by load_res.
+*----------------------------------------------------------
+res_tab
+ da snd_path
+ dfb $02
+ da ntpplay_path
+ dfb $03
+ da ntpmod_path
+ dfb $04
 
 mli_error
  sta mli_errcode           ; visible in a debugger after the QUIT
@@ -222,6 +241,8 @@ title_path    str 'TITLE'
 game_path     str 'GAME'
 test_path     str 'TEST'
 snd_path      str 'SOUNDS'
+ntpplay_path  str 'NT'
+ntpmod_path   str 'TM'
 
 * The bootstrap copies exactly one page. Fail the build if
 * the launcher ever grows past $10FF.

@@ -59,7 +59,7 @@ out/%: src/%.s $(SHARED)
 	cd src && merlin32 -V $*.s
 	mv src/$* out/$*
 
-$(IMGFILE): res/PRODOS res/sounds.bin $(BINS)
+$(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp $(BINS)
 	mkdir -p out
 	rm -f $(IMGFILE)
 	$(CADIUS) CREATEVOLUME $(IMGFILE) $(VOLNAME) 800KB --quiet
@@ -81,6 +81,14 @@ $(IMGFILE): res/PRODOS res/sounds.bin $(BINS)
 	cp res/sounds.bin out/SOUNDS\#060000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/SOUNDS\#060000 --quiet
 	rm out/SOUNDS\#060000
+	# NinjaTracker+ player (bank $$03) and the title-music module (bank
+	# $$04), loaded by cc.s at boot; TITLE plays the module on its screen.
+	cp res/ntpplayer out/NT\#060000
+	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/NT\#060000 --quiet
+	rm out/NT\#060000
+	cp res/title.ntp out/TM\#060000
+	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TM\#060000 --quiet
+	rm out/TM\#060000
 	# Rules self-tests: T on the title screen, or 00/1004g in KEGS.
 	cp out/test out/TEST\#FF2000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TEST\#FF2000 --quiet

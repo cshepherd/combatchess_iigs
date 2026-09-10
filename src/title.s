@@ -23,6 +23,15 @@
 
   put shared
 
+* NinjaTracker+ plays the title music. cc.s load_res copies the
+* player into bank $03 at boot and the TITLENTP module into bank
+* $04; the player's three-JMP entry table sits at its base.
+NinjaTrackerPlus = $030000
+NTPprepare       = NinjaTrackerPlus
+NTPplay          = NinjaTrackerPlus+3
+NTPstop          = NinjaTrackerPlus+6
+NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
+
   lda tb_inited
   bne :ready
   jsr toolbox_init
@@ -41,6 +50,7 @@
   lda #TEXT_OPAQUE
   jsr set_text_mode         ; inverse fields need the cell painted
   jsr title_palette_load
+  jsr ntp_start             ; start the title music (silent if absent)
 :show
   jsr draw_title
 :key
@@ -57,16 +67,54 @@
   jsr options_page
   bra :show
 :game
+  jsr ntp_stop              ; hand the DOC back to the Sound Tool
   sec
   xce
   MX %11
   jmp LAUNCH_GAME
 :tests
   MX %00
+  jsr ntp_stop
   sec
   xce
   MX %11
   jmp LAUNCH_TEST
+
+*----------------------------------------------------------
+* ntp_start / ntp_stop - title music via NinjaTracker+.
+* Native 16-bit. ntp_start prepares the module in bank $04
+* and loops it; a bad or absent module (NTPprepare returns
+* carry) just leaves the title silent. ntp_stop, called on
+* every exit to GAME or TEST, restores the sound interrupt
+* the Sound Tool installed so in-game _FFStartSound works.
+* ntp_playing gates the stop so it never runs without a
+* matching prepare (which would restore a stale vector).
+*----------------------------------------------------------
+  MX %00
+ntp_start
+  ldx #$0000                ; module pointer low word
+  ldy #NTP_MODULE_HI        ; module pointer high word -> $04/0000
+  lda #$0000                ; normal: two oscillators per track
+  jsl NTPprepare
+  bcs :nomusic
+  lda #$0000                ; loop the song
+  jsl NTPplay
+  lda #$0001
+  sta ntp_playing
+  rts
+:nomusic
+  stz ntp_playing
+  rts
+
+ntp_stop
+  lda ntp_playing
+  beq :done
+  jsl NTPstop
+  stz ntp_playing
+:done
+  rts
+
+ntp_playing dw 0
 
 KEY_LEFT   = $08
 KEY_RIGHT  = $15

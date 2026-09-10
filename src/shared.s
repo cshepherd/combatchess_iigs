@@ -45,7 +45,7 @@ inject_key      = $1110  ; word
 * bank; the base persists here across the title/game cycle so GAME
 * re-patches its parameter blocks each run without reloading.
 snd_blk         = $1120  ; long: base address of the loaded sample bank
-snd_loaded      = $1124  ; byte: nonzero once SOUNDS has been loaded
+snd_loaded      = $1124  ; byte: nonzero once cc.s load_res has run (once/boot)
 
 * Heartbeat task record (see toolbox_init): 20 bytes the
 * firmware keeps a pointer to for the whole session, so it
