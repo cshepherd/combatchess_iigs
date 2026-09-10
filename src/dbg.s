@@ -1618,17 +1618,25 @@ shot_check
  jsr snd_stop              ; cut the trill the instant it lands
  lda fr_shot_hit
  and #$00FF
- beq :nohit
- lda #SFX_EXPLODE
- jsr snd_play              ; the blast when it lands
+ beq :miss                 ; a miss explodes where it came to rest
  lda fr_shot_tx
  and #$00FF
  sta cx
  lda fr_shot_ty
  and #$00FF
  sta cy
+ bra :boom
+:miss
+ lda fr_shot_land_x        ; stray landing square (miss_resolve)
+ and #$00FF
+ sta cx
+ lda fr_shot_land_y
+ and #$00FF
+ sta cy
+:boom
+ lda #SFX_EXPLODE
+ jsr snd_play              ; the blast when it lands
  jsr draw_explosion
-:nohit
  lda #1
  sta dirty
  rts

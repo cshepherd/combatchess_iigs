@@ -283,8 +283,13 @@ tn_fire_after
  lda unit_class,x
  cmp #CLASS_CRUISER
  bne :ok
- lda active_side
- inc                       ; RESULT_RED_WINS + side
+* the side whose cruiser fell loses; the other wins. For a
+* normal shot that is always the enemy (active side wins), but
+* a stray (miss_resolve) can fell either cruiser, even the
+* attacker's own by friendly fire.
+ lda unit_side,x
+ eor #1
+ inc                       ; RESULT_RED_WINS + winning side
  ldx #REASON_CRUISER
  jsr game_over
 :ok

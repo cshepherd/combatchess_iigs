@@ -200,6 +200,14 @@
   sta sec_name+1
   jsr section_end
 
+  jsr section_begin
+  jsr test_miss
+  lda #<s_sec_miss
+  sta sec_name
+  lda #>s_sec_miss
+  sta sec_name+1
+  jsr section_end
+
 * Grand total: a "section" that started from zero.
   stz sec_pass
   stz sec_pass+1
@@ -4003,6 +4011,312 @@ test_first_fail ds 2
 expect          ds 1     ; expected value for check_eq; engine code never touches it
 
 *----------------------------------------------------------
+* Section - a missed shot (miss_resolve, spec 12) still lands
+* and explodes: it carries one square past the target and a
+* tile up in y, and strikes whatever sits there. An enemy
+* unit takes the shot's damage, a friendly or open ground is
+* spared, felling the enemy Battle Cruiser counts as a kill,
+* and the landing square is clamped to the board.
+* miss_setup lays a clear board with a RED cruiser at (5,5)
+* firing a doomed-to-miss shot at a BLACK tank at (8,5); the
+* stray then lands on (9,5+dy-1) = (9,4).
+*----------------------------------------------------------
+miss_setup
+ MX %11
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ jsr events_clear
+ lda #<stub_roll
+ sta roll_vec
+ lda #>stub_roll
+ sta roll_vec+1
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #5
+ ldy #5
+ jsr add_unit             ; id 0, the shooter
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_TANK
+ ldx #8
+ ldy #5
+ jsr add_unit             ; id 11, the intended target
+ ldx #SIDE_RED
+ jmp units_begin_turn     ; ready RED to fire; rts through here
+
+test_miss
+ MX %11
+* --- an enemy on the landing square takes the stray ---
+ jsr miss_setup
+ lda #CLASS_TANK
+ ldx #9
+ ldy #4
+ jsr add_unit             ; id 12, BLACK, sitting where the miss lands
+ lda unit_hp+12
+ sta t_cost               ; victim HP before the shot
+ lda unit_hp+11
+ sta t_legal              ; intended target HP before the shot
+ lda #100
+ sta stub_value           ; roll 100 >= any hit chance -> always a miss
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #11
+ jsr fire_execute
+ jsr check_eq
+ lda #FR_MISS
+ sta expect
+ lda fr_outcome
+ jsr check_eq             ; a stray on a tank is still a miss
+ lda #9
+ sta expect
+ lda fr_shot_land_x
+ jsr check_eq
+ lda #4
+ sta expect
+ lda fr_shot_land_y
+ jsr check_eq             ; landed one past the target, a tile up
+ lda t_legal
+ sta expect
+ lda unit_hp+11
+ jsr check_eq             ; the intended target is untouched
+ lda t_cost
+ sec
+ sbc fr_damage
+ sta expect
+ lda unit_hp+12
+ jsr check_eq             ; the unit under the stray took the damage
+* --- a friendly on the landing square is hit too ---
+ jsr miss_setup
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_TANK
+ ldx #9
+ ldy #4
+ jsr add_unit             ; id 1, RED, friendly to the shooter
+ lda unit_hp+1
+ sta t_cost
+ lda #100
+ sta stub_value
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #11
+ jsr fire_execute
+ jsr check_eq
+ lda #FR_MISS
+ sta expect
+ lda fr_outcome
+ jsr check_eq
+ lda t_cost
+ sec
+ sbc fr_damage
+ sta expect
+ lda unit_hp+1
+ jsr check_eq             ; strays are blind: the friendly takes it too
+* --- destructible terrain on the landing square is worn ---
+ jsr miss_setup
+ lda #TERR_BRIDGE
+ ldx #9
+ ldy #4
+ jsr set_cell             ; a bridge (15 HP) where the miss lands
+ ldx #9
+ ldy #4
+ jsr cell_index
+ tax
+ lda terr_hp,x
+ sta t_cost               ; the fresh bridge's hit points
+ lda #100
+ sta stub_value
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #11
+ jsr fire_execute
+ jsr check_eq
+ lda #FR_MISS
+ sta expect
+ lda fr_outcome
+ jsr check_eq
+ ldx #9
+ ldy #4
+ jsr cell_index
+ tax
+ lda t_cost
+ sec
+ sbc fr_damage
+ sta expect
+ lda terr_hp,x
+ jsr check_eq             ; the bridge took the stray's damage
+ lda #TERR_BRIDGE
+ sta expect
+ ldx #9
+ ldy #4
+ jsr get_cell
+ jsr check_eq             ; and still stands (15 HP outlasts one shot)
+* --- a stray that fells the enemy cruiser counts as a kill ---
+ jsr miss_setup
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #9
+ ldy #4
+ jsr add_unit             ; id 12, BLACK cruiser
+ lda #1
+ sta unit_hp+12           ; on its last hit point
+ lda #100
+ sta stub_value
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #11
+ jsr fire_execute
+ jsr check_eq
+ lda #FR_KILL
+ sta expect
+ lda fr_outcome
+ jsr check_eq             ; a stray cruiser kill wins the game
+ lda #12
+ sta expect
+ lda fr_target
+ jsr check_eq             ; fr_target redirected to the felled cruiser
+* --- the landing square is clamped to the board ---
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ jsr events_clear
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #16
+ ldy #5
+ jsr add_unit             ; id 0
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_TANK
+ ldx #19
+ ldy #5
+ jsr add_unit             ; id 11, at the right edge
+ ldx #SIDE_RED
+ jsr units_begin_turn
+ lda #100
+ sta stub_value
+ lda #FR_OK
+ sta expect
+ lda #0
+ ldx #11
+ jsr fire_execute
+ jsr check_eq
+ lda #19
+ sta expect
+ lda fr_shot_land_x
+ jsr check_eq             ; tx+1 = 20 clamped back onto the board
+* --- turn layer: a stray that fells the enemy cruiser wins ---
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ jsr events_clear
+ lda #<stub_roll
+ sta roll_vec
+ lda #>stub_roll
+ sta roll_vec+1
+ lda #<stub_tick
+ sta tick_vec
+ lda #>stub_tick
+ sta tick_vec+1
+ stz stub_tick_value+2
+ stz stub_tick_value+3
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_TANK
+ ldx #7
+ ldy #5
+ jsr add_unit             ; id 0, RED tank shooter
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_TANK
+ ldx #8
+ ldy #5
+ jsr add_unit             ; id 11, BLACK tank, the aimed-at target
+ lda #CLASS_CRUISER
+ ldx #9
+ ldy #4
+ jsr add_unit             ; id 12, BLACK cruiser on the landing square
+ lda #SIDE_RED
+ sta opt_first_side
+ lda #2
+ sta opt_moves_per_turn
+ lda #SHOOT_ANY
+ sta opt_shoot_option
+ lda #1
+ sta opt_time_minutes
+ sta opt_time_minutes+1
+ lda #<1000
+ ldx #>1000
+ jsr tick_set
+ jsr game_start
+ lda #1
+ sta unit_hp+12           ; the cruiser is one shot from gone
+ lda #100
+ sta stub_value           ; force the miss
+ lda #0
+ ldx #11
+ jsr turn_fire
+ lda #RESULT_RED_WINS
+ sta expect
+ lda game_result
+ jsr check_eq             ; Red's stray felled Black's cruiser
+ lda #REASON_CRUISER
+ sta expect
+ lda result_reason
+ jsr check_eq
+* --- turn layer: a stray onto your OWN cruiser loses ---
+ lda #TERR_CLEAR
+ jsr board_fill
+ jsr units_clear
+ jsr events_clear
+ lda #SIDE_RED
+ sta un_side
+ lda #CLASS_CRUISER
+ ldx #9
+ ldy #4
+ jsr add_unit             ; id 0, RED cruiser on the landing square
+ lda #CLASS_TANK
+ ldx #7
+ ldy #5
+ jsr add_unit             ; id 1, RED tank shooter
+ lda #SIDE_BLACK
+ sta un_side
+ lda #CLASS_TANK
+ ldx #8
+ ldy #5
+ jsr add_unit             ; id 11, BLACK tank target
+ lda #SIDE_RED
+ sta opt_first_side
+ lda #<1000
+ ldx #>1000
+ jsr tick_set
+ jsr game_start
+ lda #1
+ sta unit_hp+0            ; Red's own cruiser one shot from gone
+ lda #100
+ sta stub_value
+ lda #1
+ ldx #11
+ jsr turn_fire
+ lda #RESULT_BLACK_WINS
+ sta expect
+ lda game_result
+ jsr check_eq             ; Red destroyed its own cruiser; Black wins
+ lda #REASON_CRUISER
+ sta expect
+ lda result_reason
+ jsr check_eq
+ rts
+
+*----------------------------------------------------------
 * section_begin / section_end - Snapshot the tallies, then
 * after the section's checks draw "NAME   passed/run" on
 * the next line, green if nothing failed, red otherwise.
@@ -4139,6 +4453,7 @@ s_sec_turn   asc 'TURN SYSTEM'
 s_sec_fire_at asc 'SQUARE FIRE'
              dfb 0
 s_sec_ai     asc 'COMPUTER'
+s_sec_miss   asc 'STRAY SHOT'
              dfb 0
 s_sec_total  asc 'TOTAL'
              dfb 0

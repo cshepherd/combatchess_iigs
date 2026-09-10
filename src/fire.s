@@ -281,8 +281,7 @@ fire_execute
  lda fr_roll
  sta ev_p2
  jsr event_push
- jsr miss_resolve
- stz fr_outcome            ; FR_MISS
+ jsr miss_resolve          ; sets fr_outcome (FR_MISS, or FR_KILL on a stray cruiser kill)
  lda #FR_OK
  sec
 :done
@@ -408,8 +407,7 @@ fire_execute_at
  lda fr_roll
  sta ev_p2
  jsr event_push
- jsr miss_resolve
- stz fr_outcome            ; FR_MISS
+ jsr miss_resolve          ; sets fr_outcome (FR_MISS, or FR_KILL on a stray cruiser kill)
  lda #FR_OK
  sec
 :done
@@ -549,18 +547,175 @@ unit_take_hit
  rts
 
 *----------------------------------------------------------
-* miss_resolve - What a missed shot does instead (spec 12).
-* UNVERIFIED (spec 34, critical): the manual says a miss may
-* strike ground or another unit but gives no scatter
-* algorithm, eligible squares, friendly-fire rule, terrain
-* effect or probabilities, and does not say whether the
-* projectile carries on down the line. Until the Atari
-* executable is measured, a miss does nothing further.
-* Called after EV_SHOT_MISSED with fr_* and ln_* describing
-* the shot, so scatter code has everything when it arrives.
+* miss_resolve - A missed shot still lands somewhere and
+* explodes (spec 12). The projectile carries one square past
+* the intended target along the line of fire, shifted a
+* square in y the way the display flies a miss (up, or down
+* when up would leave the top of the board), and strikes
+* whatever sits on that square. Strays are blind: any unit
+* there takes fr_damage (friend or foe), destructible terrain
+* on an empty square is worn down and destroyed at 0 HP, and
+* open ground just takes the blast. The clamped landing
+* square goes to the display in fr_shot_land_x/y so the blast
+* lands where the shot came to rest. miss_resolve owns
+* fr_outcome for the miss: FR_MISS, or FR_KILL with fr_target
+* = the victim when a stray fells a Battle Cruiser, so the
+* turn layer ends the game (spec 17.1); with friendly fire on
+* that cruiser may be the attacker's own.
+* In:  fr_shot_fx/fy, fr_shot_tx/ty, fr_attacker, fr_damage.
+* Clobbers A, X, Y, rt0-rt7, ev_*.
+* Called after EV_SHOT_MISSED.
+*
+* UNVERIFIED (spec 12, 34): the manual says a miss may strike
+* ground or another unit but gives no scatter algorithm,
+* eligible squares, friendly-fire rule or terrain effect.
+* This carries the shot one square past the target and lets
+* it hit anything there; measure the Atari executable to
+* confirm.
 *----------------------------------------------------------
 miss_resolve
  MX %11
+ lda #FR_MISS
+ sta fr_outcome
+* direction of fire: dx, dy in {-1, 0, +1}
+ lda fr_shot_tx
+ sec
+ sbc fr_shot_fx
+ jsr ms_sgn
+ sta rt0                   ; dx
+ lda fr_shot_ty
+ sec
+ sbc fr_shot_fy
+ jsr ms_sgn
+ sta rt1                   ; dy
+* y shift: down (+1) when the higher endpoint is the top row,
+* else up (-1); matches the display's miss flight
+ lda fr_shot_fy
+ cmp fr_shot_ty
+ bcc :miny                 ; fy < ty: min is fy, already in A
+ lda fr_shot_ty
+:miny
+ cmp #1
+ bcs :up                   ; min >= 1: shift up
+ lda #1                    ; top-row endpoint: shift down
+ bra :yadd
+:up
+ lda #$FF                  ; -1
+:yadd
+ clc
+ adc rt1
+ sta rt1                   ; dy + y shift
+* landing square, clamped to the board
+ lda fr_shot_tx
+ clc
+ adc rt0
+ ldx #BOARD_W
+ jsr ms_clamp
+ sta fr_shot_land_x
+ sta rt2
+ lda fr_shot_ty
+ clc
+ adc rt1
+ ldx #BOARD_H
+ jsr ms_clamp
+ sta fr_shot_land_y
+ sta rt3
+* what is on the landing square?
+ ldx rt2
+ ldy rt3
+ jsr get_occupant          ; A = 0 empty, else id + 1
+ beq :terrain              ; open square: wear the terrain instead
+ sec
+ sbc #1
+ tax                       ; victim id (friend or foe: strays are blind)
+ stx rt4
+ lda fr_damage
+ jsr unit_take_hit         ; the unit and its terrain both take it
+ bcc :done
+ ldx rt4
+ lda unit_class,x
+ cmp #CLASS_CRUISER
+ bne :done
+* a Battle Cruiser fell to the stray: count it as a kill so the
+* turn layer ends the game, losing for fr_target's side
+ lda rt4
+ sta fr_target
+ lda #FR_KILL
+ sta fr_outcome
+ bra :done
+:terrain
+ ldx rt2
+ ldy rt3
+ jsr cell_index
+ tax                       ; X = cell index of the landing square
+ lda terr_hp,x
+ beq :done                 ; open / indestructible ground: just explode
+ sec
+ sbc fr_damage
+ bcs :hpok
+ lda #0
+:hpok
+ sta terr_hp,x
+ bne :terr_dmg
+* worn to nothing: the square is destroyed (spec 23)
+ ldx rt2
+ ldy rt3
+ jsr get_cell
+ sta fr_terr_type
+ jsr destroy_cell          ; A = new type; X, Y preserved
+ sta ev_p3
+ lda #EV_TERRAIN_DESTROYED
+ sta ev_type
+ stx ev_p0
+ sty ev_p1
+ lda fr_terr_type
+ sta ev_p2
+ stz ev_p4
+ jsr event_push
+ bra :done
+:terr_dmg
+ lda #EV_TERRAIN_DAMAGED
+ sta ev_type
+ lda rt2
+ sta ev_p0
+ lda rt3
+ sta ev_p1
+ lda terr_hp,x             ; X still the cell index
+ sta ev_p2
+ stz ev_p3
+ stz ev_p4
+ jsr event_push
+:done
+ rts
+
+* ms_sgn - signed byte in A -> -1 / 0 / +1
+ms_sgn
+ MX %11
+ cmp #0
+ beq :z
+ bmi :neg
+ lda #1
+ rts
+:neg
+ lda #$FF
+:z
+ rts
+
+* ms_clamp - clamp signed byte A to 0..X-1 (X a board size,
+* 1..127); values >= $80 read as negative and clamp to 0
+ms_clamp
+ MX %11
+ cmp #$80
+ bcs :zero
+ stx rt6
+ cmp rt6
+ bcc :ok                   ; A < dimension
+ lda rt6
+ dec                       ; dimension - 1
+ rts
+:zero
+ lda #0
+:ok
  rts
 
 fr_attacker  ds 1
@@ -582,3 +737,5 @@ fr_shot_fy   ds 1
 fr_shot_tx   ds 1          ; the target square
 fr_shot_ty   ds 1
 fr_shot_class ds 1         ; the attacker's class, for the shot's size
+fr_shot_land_x ds 1        ; where a miss came to rest (miss_resolve); the
+fr_shot_land_y ds 1        ; display explodes here on a miss
