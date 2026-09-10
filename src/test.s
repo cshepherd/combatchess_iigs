@@ -1070,7 +1070,7 @@ terr_cases
  dfb TERR_CLEAR,TF_MOVE+TF_FIRE,TERR_CLEAR
  dfb TERR_TREE,TF_MOVE+TF_DESTRUCT+TF_SLOW,TERR_CLEAR
  dfb TERR_WATER,TF_FIRE,TERR_WATER
- dfb TERR_BRIDGE,TF_MOVE+TF_FIRE+TF_DESTRUCT,TERR_CLEAR
+ dfb TERR_BRIDGE,TF_MOVE+TF_FIRE+TF_DESTRUCT,TERR_WATER
  dfb TERR_MOUNTAIN,0,TERR_MOUNTAIN
  dfb TERR_WHITE,TF_MOVE+TF_FIRE,TERR_WHITE
  dfb TERR_YELLOW,TF_MOVE+TF_FIRE,TERR_YELLOW
@@ -1081,7 +1081,7 @@ terr_cases
 * type placed, expected destroyed flag, expected type after
 des_cases
  dfb TERR_TREE,1,TERR_CLEAR
- dfb TERR_BRIDGE,1,TERR_CLEAR
+ dfb TERR_BRIDGE,1,TERR_WATER
  dfb TERR_GREY,1,TERR_WHITE
  dfb TERR_MOUNTAIN,0,TERR_MOUNTAIN
  dfb TERR_WATER,0,TERR_WATER
@@ -2760,12 +2760,12 @@ test_fire
  stz expect
  lda unit_terr_hp+12
  jsr check_eq
- lda #TERR_CLEAR
+ lda #TERR_WATER
  sta expect
  ldx #5
  ldy #1
  jsr get_cell
- jsr check_eq
+ jsr check_eq              ; the felled bridge is a water gap
  lda #UF_ALIVE
  sta expect
  lda unit_flags+12
@@ -2793,10 +2793,10 @@ test_fire
  sta expect
  lda ev_p2
  jsr check_eq
- lda #TERR_CLEAR
+ lda #TERR_WATER
  sta expect
  lda ev_p3
- jsr check_eq
+ jsr check_eq              ; destroyed to a water gap, not clear
  jsr pop_none
 * a kill: the black car down to 4
  lda #4
@@ -3549,7 +3549,7 @@ t_illegal  ds 1
 * bridge (9); no ammo (1); through the turn layer: not the
 * black car's turn, then the tank's shot counts and the
 * a bridge: one hit a turn (spec 13 refuses a repeat), worn to
-* clear ground over four turns (8). 56 checks.
+* a water gap over four turns (8). 56 checks.
 *----------------------------------------------------------
 test_fire_at
  MX %11
@@ -3854,7 +3854,7 @@ test_fire_at
  ldy #7
  jsr get_cell
  jsr check_eq              ; unchanged: the repeat did nothing
-* three more shots, each a fresh turn, wear it down to clear ground
+* three more shots, each a fresh turn, wear it down to a water gap
  ldx #SIDE_RED
  jsr units_begin_turn
  lda #0
@@ -3873,12 +3873,12 @@ test_fire_at
  ldx #5
  ldy #7
  jsr turn_fire_at
- lda #TERR_CLEAR
+ lda #TERR_WATER
  sta expect
  ldx #5
  ldy #7
  jsr get_cell
- jsr check_eq              ; four hits over four turns: destroyed to clear ground
+ jsr check_eq              ; four hits over four turns: felled to a water gap
  rts
 
 *----------------------------------------------------------

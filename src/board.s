@@ -9,7 +9,7 @@
 * A cell is one byte: its terrain type. Everything a type
 * does lives in the terrain_* tables, so a board is 220 type
 * bytes and destruction is a type change (spec 31): TREE ->
-* CLEAR, BRIDGE -> CLEAR, GREY -> WHITE. Terrain hit points
+* CLEAR, BRIDGE -> WATER, GREY -> WHITE. Terrain hit points
 * belong to the unit standing on a cell (spec 23), not to
 * the cell, so cells carry no HP.
 *----------------------------------------------------------
@@ -44,7 +44,7 @@ dir_dy dfb $FF,$FF,0,1,1,1,0,$FF
 TERR_CLEAR    = 0   ; open ground
 TERR_TREE     = 1   ; forest: passable at a cost, blocks fire, burns to CLEAR
 TERR_WATER    = 2   ; impassable, fire crosses it
-TERR_BRIDGE   = 3   ; passable crossing, destroyed to CLEAR ground
+TERR_BRIDGE   = 3   ; passable crossing, felled to a WATER gap
 TERR_MOUNTAIN = 4   ; blocks everything, permanent
 TERR_WHITE    = 5   ; abstract open cell (board 6 free blocks, board 9 white)
 TERR_YELLOW   = 6   ; abstract open cell, boards 7-8 centre (differs only in look)
@@ -82,9 +82,13 @@ terrain_flags
  dfb 0                               ; BLACK
 
 * What a destroyed cell becomes. Indestructible types map to
-* themselves so the table is safe to read for any type.
+* themselves so the table is safe to read for any type. A
+* felled bridge becomes WATER, not CLEAR: a bridge is a river
+* crossing of two halves, so losing either half opens a gap
+* that severs the crossing (a unit can no longer take off from
+* or land on the destroyed span). Fire still crosses the gap.
 terrain_after
- dfb TERR_CLEAR,TERR_CLEAR,TERR_WATER,TERR_CLEAR,TERR_MOUNTAIN
+ dfb TERR_CLEAR,TERR_CLEAR,TERR_WATER,TERR_WATER,TERR_MOUNTAIN
  dfb TERR_WHITE,TERR_YELLOW,TERR_WHITE,TERR_PURPLE,TERR_BLACK
 
 * Terrain hit points of an EMPTY destructible square (spec
