@@ -4,6 +4,8 @@ A port of Avalon Hill's *Combat Chess* (Atari 8-bit, 1984) to the Apple IIGS, wr
 
 The rules specification lives in `combat_chess_iigs_spec-3.md`; the plan for harvesting reference art from the original is `combat_chess_visual_capture_checklist.md`. The project follows the spec's milestones: headless rules engine, Atari verification, programmer-art debug board, final art, sound, AI.
 
+[ cshepherd NOTE - This is major slop, but I'm releasing it because it's an interestingly near-exact port that took less than 2 days for Claude to crunch through. I was surprised by its thorough knowledge of both the Atari8 and Apple IIGS platforms ]
+
 ## Status
 
 Milestone 1 in progress. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. The headless rules engine is functionally complete for the printed rules: data tables, board and terrain, line tracing, units, movement, fire, turns with both Shoot Options, chess clocks with pause, and victory, time loss, surrender and stalemate, all with self-tests. Items the manual leaves open are marked UNVERIFIED in the source for milestone 2.
