@@ -227,6 +227,30 @@ def find_bursts(rows, gap=6):
     return bursts
 
 
+def find_fanfare(rows):
+    """The turn-start fanfare is a two-voice ascending sweep on channel 2, a
+    short phrase whose AUDF2 steps down (pitch up) monotonically. The title
+    tune also uses channel 2, so group nearby channel-2 activity into phrases
+    (bridging the brief note-off gaps) and return the descending one's [s,e)."""
+    MERGE = 60                        # rows of ch-2 silence still in one phrase
+    phrases, s, e = [], None, None
+    for i, r in enumerate(rows):
+        if r[3] & 0x0F:               # AUDC2 volume nonzero
+            if s is None:
+                s = i
+            e = i
+        elif s is not None and i - e > MERGE:
+            phrases.append((s, e + 1)); s = None
+    if s is not None:
+        phrases.append((s, e + 1))
+    for (s, e) in phrases:
+        af2 = [rows[j][2] for j in range(s, e) if rows[j][3] & 0x0F]
+        seq = [af2[0]] + [af2[k] for k in range(1, len(af2)) if af2[k] != af2[k - 1]]
+        if len(seq) >= 4 and all(seq[k + 1] < seq[k] for k in range(len(seq) - 1)):
+            return (s, e)
+    return None
+
+
 def classify(rows, s, e):
     hist = {}
     for r in rows[s:e]:
@@ -270,6 +294,22 @@ def render_burst(rows, s, e, interval):
     return out
 
 
+def render_tone(audf, audc, dur_s):
+    """Render a synthetic single-channel POKEY tone to float PCM at PLAYBACK.
+    Used for the clock tick and cursor-move beep, whose register values were
+    read off the log but which are simpler to reproduce than to cut out."""
+    pk = Pokey()
+    pk.write(8, 0x00)          # AUDCTL 0: 64 kHz base, like the game
+    pk.write(0, audf)          # AUDF1
+    pk.write(1, audc)          # AUDC1 (distortion + volume)
+    out = []
+    pk.process(int(round(dur_s * PLAYBACK)), out)
+    if out:
+        mid = sum(out) / len(out)
+        out = [x - mid for x in out]
+    return out
+
+
 def downsample(buf, n_out):
     out = []
     step = len(buf) / n_out if n_out else 1
@@ -303,6 +343,7 @@ EFFECTS = [
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rec", required=True)
+    ap.add_argument("--rec-turn", help="capture holding the turn-start fanfare")
     ap.add_argument("--interval", type=int, default=8)
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__),
                                                    "..", "src", "sound_samples.s"))
@@ -351,6 +392,47 @@ def main():
         if a.wavdir:
             write_wav(os.path.join(a.wavdir, f"{kind}.wav"), to_u8(buf))
             write_wav(os.path.join(a.wavdir, f"{kind}_doc.wav"), u8, read_rate)
+
+    # Two short pure tones from the log: the ~329 Hz clock tick (AUDF $60)
+    # heard once a second, and the ~2458 Hz cursor-move beep (AUDF $0c).
+    # Rendered synthetically (they are trivial tones) into 256-byte samples.
+    for sym, audf, audc, dur in (
+            ("snd_tick_wave", 0x60, 0xAF, 0.017),
+            ("snd_beep_wave", 0x0C, 0xAF, 0.017)):
+        code = 0
+        nbytes = 256 << code
+        buf = render_tone(audf, audc, dur)
+        u8 = to_u8(downsample(buf, nbytes))
+        read_rate = nbytes / dur
+        freq = max(1, min(0x1ff, round(read_rate / DOC_K)))
+        print(f"{sym}: {dur*1000:.0f} ms tone -> [{nbytes}] "
+              f"read {read_rate:.0f}Hz freq ${freq:03X}")
+        out_syms.append((sym, nbytes, code, freq, max(1, round(dur * 60)), u8))
+        if a.wavdir:
+            write_wav(os.path.join(a.wavdir, f"{sym}.wav"), u8, read_rate)
+
+    # The turn-start fanfare: a two-voice ascending sweep ripped from a
+    # separate capture that includes a turn beginning (--rec-turn).
+    if a.rec_turn and os.path.exists(a.rec_turn):
+        trows = parse_rec(a.rec_turn)
+        span = find_fanfare(trows)
+        if span:
+            s, e = span
+            code = 4                               # 4096-byte buffer
+            nbytes = 256 << code
+            dur = (e - s) / (SCANLINE_HZ / a.interval)
+            buf = render_burst(trows, s, e, a.interval)
+            u8 = to_u8(downsample(buf, nbytes))
+            read_rate = nbytes / dur
+            freq = max(1, min(0x1ff, round(read_rate / DOC_K)))
+            print(f"snd_turn_wave: rows {s}-{e} ({dur*1000:.0f} ms) "
+                  f"read {read_rate:.0f}Hz freq ${freq:03X}")
+            out_syms.append(("snd_turn_wave", nbytes, code, freq,
+                             round(dur * 60), u8))
+            if a.wavdir:
+                write_wav(os.path.join(a.wavdir, "snd_turn_wave.wav"), u8, read_rate)
+        else:
+            print("!! no fanfare (channel-2 sweep) found in", a.rec_turn)
 
     # the samples live in a separate disk file (SOUNDS), loaded at
     # game start into a spare RAM bank; sound_samples.s carries only

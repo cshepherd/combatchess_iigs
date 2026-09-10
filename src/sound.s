@@ -29,12 +29,18 @@ SFX_MOVE    = 0
 SFX_CANNON  = 1
 SFX_EXPLODE = 2
 SFX_UI      = 3
+SFX_TICK    = 4            ; play-clock tick, once a second
+SFX_BEEP    = 5            ; cursor-move click
+SFX_TURN    = 6            ; turn-start fanfare (rising two-voice sweep)
 
 * One logical generator each so effects can sound together.
 GEN_MOVE    = 1
 GEN_CANNON  = 2
 GEN_EXPLODE = 3
 GEN_UI      = 4
+GEN_TICK    = 5
+GEN_BEEP    = 6
+GEN_TURN    = 7
 
 *----------------------------------------------------------
 * snd_load - point the parameter blocks at the ripped samples
@@ -55,6 +61,15 @@ snd_load
  jsr :one
  lda #snd_fire_wave_off
  ldx #snd_pb_cannon
+ jsr :one
+ lda #snd_tick_wave_off
+ ldx #snd_pb_tick
+ jsr :one
+ lda #snd_beep_wave_off
+ ldx #snd_pb_beep
+ jsr :one
+ lda #snd_turn_wave_off
+ ldx #snd_pb_turn
  jsr :one
 :ret
  rts
@@ -181,7 +196,7 @@ snd_tick
  plx
 :next
  inx
- cpx #4
+ cpx #7
  bne :t
  rep #$30
  MX %00
@@ -343,13 +358,39 @@ snd_pb_ui
  dw 1
  adrl 0
  dw $00A0
+snd_pb_tick
+ adrl 0                     ; the play-clock tick (patched)
+ dw snd_tick_wave_size
+ dw snd_tick_wave_freq
+ dw $A000                  ; DOC $A000 (256 bytes, run-out gap is $00)
+ dw snd_tick_wave_code
+ adrl 0
+ dw $0090
+snd_pb_beep
+ adrl 0                     ; the cursor-move beep (patched)
+ dw snd_beep_wave_size
+ dw snd_beep_wave_freq
+ dw $A800                  ; DOC $A800 (256 bytes, run-out gap is $00)
+ dw snd_beep_wave_code
+ adrl 0
+ dw $0060                  ; quiet - it clicks on every cursor step
+snd_pb_turn
+ adrl 0                     ; the turn-start fanfare (patched)
+ dw snd_turn_wave_size
+ dw snd_turn_wave_freq
+ dw $6000                  ; DOC $6000 (4096 bytes, run-out gap is $00)
+ dw snd_turn_wave_code
+ adrl 0
+ dw $00FF
 
 snd_pb_tab  da snd_pb_move,snd_pb_cannon,snd_pb_explode,snd_pb_ui
-snd_gen_tab dw GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI
-snd_gen8    dfb GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI
+            da snd_pb_tick,snd_pb_beep,snd_pb_turn
+snd_gen_tab dw GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI,GEN_TICK,GEN_BEEP,GEN_TURN
+snd_gen8    dfb GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI,GEN_TICK,GEN_BEEP,GEN_TURN
 * frames each effect plays before snd_tick stops it (its own
 * duration; UI a short fixed buzz). All < 256.
 snd_frames  dfb snd_move_wave_frames,snd_fire_wave_frames,snd_explode_wave_frames,10
+            dfb snd_tick_wave_frames,snd_beep_wave_frames,snd_turn_wave_frames
 
 SND_BUZZ_LEN  = 512
 
@@ -359,6 +400,6 @@ snd_fx    ds 2
 snd_now   ds 2
 snd_last_tick ds 2
 snd_delta ds 2
-snd_cd    ds 4             ; one countdown byte per effect (ticks remaining)
-snd_loopf ds 4             ; per-effect: nonzero = re-trigger on expiry (trill)
+snd_cd    ds 7             ; one countdown byte per effect (ticks remaining)
+snd_loopf ds 7             ; per-effect: nonzero = re-trigger on expiry (trill)
 snd_buzz  ds SND_BUZZ_LEN+1

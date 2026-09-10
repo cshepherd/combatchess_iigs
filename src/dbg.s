@@ -89,6 +89,7 @@ dbg_init
  stz over_shown
  lda #$FFFF
  sta last_sec
+ sta turn_last            ; != any side, so the first turn's fanfare plays
  stz msg_ptr
  stz status_view
  sep #$20
@@ -118,6 +119,7 @@ dbg_run
 :loop
  jsr anim_check            ; slide a unit that just moved, before its square is drawn
  jsr shot_check            ; fly a shot that was just fired, then explode on a hit
+ jsr turn_check            ; a fanfare when the side to move changes
  lda dirty
  beq :clock
  stz dirty
@@ -167,7 +169,25 @@ update_clock
  cmp last_sec
  beq :same
  sta last_sec
+ lda #SFX_TICK
+ jsr snd_play             ; the play clock ticks each second
  jmp draw_clock            ; just the clock digits, not the whole line (no flashing)
+:same
+ rts
+
+*----------------------------------------------------------
+* turn_check - a rising fanfare each time the side to move
+* changes (including the first turn). Native 16-bit.
+*----------------------------------------------------------
+turn_check
+ MX %00
+ lda active_side
+ and #$00FF
+ cmp turn_last
+ beq :same
+ sta turn_last
+ lda #SFX_TURN
+ jsr snd_play
 :same
  rts
 
@@ -362,6 +382,7 @@ k_left
  lda cur_x
  beq :edge
  dec cur_x
+ jsr cursor_beep
 :edge
  jmp mark_dirty
 k_right
@@ -370,6 +391,7 @@ k_right
  cmp #BOARD_W-1
  bcs :edge
  inc cur_x
+ jsr cursor_beep
 :edge
  jmp mark_dirty
 k_up
@@ -377,6 +399,7 @@ k_up
  lda cur_y
  beq :edge
  dec cur_y
+ jsr cursor_beep
 :edge
  jmp mark_dirty
 k_down
@@ -385,6 +408,7 @@ k_down
  cmp #BOARD_H-1
  bcs :edge
  inc cur_y
+ jsr cursor_beep
 :edge
  jmp mark_dirty
 
@@ -398,6 +422,12 @@ mark_dirty
  lda #1
  sta dirty
  rts
+
+* cursor_beep - a small click as the cursor steps to a new square.
+cursor_beep
+ MX %00
+ lda #SFX_BEEP
+ jmp snd_play
 
 *----------------------------------------------------------
 * k_confirm - RETURN: select, move or fire by mode.
@@ -2493,6 +2523,7 @@ quit       ds 2
 over_shown ds 2
 shown_side ds 2
 last_sec   ds 2
+turn_last  ds 2            ; side to move at the last turn_check (fanfare edge)
 hud_top    ds 2            ; top row of the status lines: HUD_TOP, or STATUS_HUD_TOP
 hud_side   ds 2
 hud_y      ds 2
