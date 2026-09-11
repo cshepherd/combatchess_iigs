@@ -56,7 +56,9 @@ snd_load
  MX %00
  lda snd_loaded
  and #$00FF
- beq :ret
+ bne :go
+ rts
+:go
  lda #$0000                ; explosion -> DOC $0000 (16 KB)
  ldx #snd_explode_wave_off
  ldy #16384
@@ -96,6 +98,14 @@ snd_load
  lda #$B200
  ldx #snd_place_car_wave_off
  ldy #256
+ jsr doc_load
+ lda #$D000                ; tank move buzz -> DOC $D000 (4 KB)
+ ldx #snd_move_tank_wave_off
+ ldy #4096
+ jsr doc_load
+ lda #$E000                ; cruiser move chug -> DOC $E000 (4 KB)
+ ldx #snd_move_cru_wave_off
+ ldy #4096
  jsr doc_load
 :ret
  rts
@@ -242,6 +252,74 @@ snd_stop
  jmp doc_setreg
 
 *----------------------------------------------------------
+* snd_move - the per-class movement engine note on the move
+* oscillator (osc 8): armored car (class 2) plays the ripped
+* buzz at DOC $8000, the tank (1) a mid buzz at $D000, the
+* battle cruiser (0) a slow deep chug at $E000. A = class (0
+* cruiser, 1 tank, 2 car). One-shot (control $02), self-halting
+* on the 16-$00 tail. Native 16-bit. Mute if never loaded.
+*----------------------------------------------------------
+MOVE_OSC = 8               ; oscillator 8, the movement voice
+snd_move
+ MX %00
+ and #$00FF
+ pha
+ lda snd_loaded
+ and #$00FF
+ bne :ok
+ pla
+ rts
+:ok
+ pla
+ sta snd_move_cls          ; class 0/1/2
+* halt the move oscillator for a clean re-trigger
+ ldx #E_CTRL+MOVE_OSC
+ lda #$01
+ jsr doc_setreg
+* EBTR = (code<<3) | code
+ ldx snd_move_cls
+ lda snd_move_codeT,x
+ and #$00FF
+ sta snd_tmp
+ asl
+ asl
+ asl
+ ora snd_tmp
+ pha
+ ldx #E_BTR+MOVE_OSC
+ pla
+ jsr doc_setreg
+* frequency low then high
+ lda snd_move_cls
+ asl
+ tax
+ lda snd_move_freqT,x
+ sta snd_tmp
+ ldx #E_FREQL+MOVE_OSC
+ lda snd_tmp
+ jsr doc_setreg
+ ldx #E_FREQH+MOVE_OSC
+ lda snd_tmp
+ xba
+ jsr doc_setreg
+* volume
+ ldx #E_VOL+MOVE_OSC
+ lda #$B0
+ jsr doc_setreg
+* waveform start page
+ ldx snd_move_cls
+ lda snd_move_pageT,x
+ and #$00FF
+ pha
+ ldx #E_WPAGE+MOVE_OSC
+ pla
+ jsr doc_setreg
+* start it one-shot
+ ldx #E_CTRL+MOVE_OSC
+ lda #$02
+ jmp doc_setreg
+
+*----------------------------------------------------------
 * snd_place - the piece-placement beep for class A (0 cruiser,
 * 1 tank, 2 car), pitched by class, on PLACE_OSC in one-shot
 * mode. The three samples were copied into DOC RAM by
@@ -360,8 +438,15 @@ snd_volT  dfb $B0,$E0,$FF,$A0,$90,$60,$FF
 snd_ctrlT dfb $02,$00,$02,$02,$02,$02,$02
 place_page_tab dfb $B0,$B1,$B2   ; DOC RAM pages: cruiser, tank, car
 
+* Per-class movement engine note (index = CLASS_*: 0 cruiser,
+* 1 tank, 2 car): DOC RAM page, buffer-size code, frequency.
+snd_move_pageT dfb $E0,$D0,$80   ; cruiser $E000, tank $D000, car $8000
+snd_move_codeT dfb snd_move_cru_wave_code,snd_move_tank_wave_code,snd_move_wave_code
+snd_move_freqT dw snd_move_cru_wave_freq,snd_move_tank_wave_freq,snd_move_wave_freq
+
 snd_fx      ds 2            ; current effect index
 snd_osc_cur ds 2            ; its oscillator number
 snd_tmp     ds 2            ; scratch: page / dest address / code
 snd_len     ds 2            ; doc_load byte count
 snd_now     ds 2            ; snd_gettick low word
+snd_move_cls ds 2           ; snd_move's class index

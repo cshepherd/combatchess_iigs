@@ -295,12 +295,15 @@ def render_burst(rows, s, e, interval):
     return out
 
 
-def render_tone(audf, audc, dur_s):
+def render_tone(audf, audc, dur_s, audctl=0x00):
     """Render a synthetic single-channel POKEY tone to float PCM at PLAYBACK.
     Used for the clock tick and cursor-move beep, whose register values were
-    read off the log but which are simpler to reproduce than to cut out."""
+    read off the log but which are simpler to reproduce than to cut out.
+    audctl selects the base clock: 0 = 64 kHz (freq 31960/(AUDF+1)); CLOCK_15
+    = the 15 kHz base (freq 7850/(AUDF+1)), for tones deeper than a single
+    byte of AUDF can reach at 64 kHz."""
     pk = Pokey()
-    pk.write(8, 0x00)          # AUDCTL 0: 64 kHz base, like the game
+    pk.write(8, audctl)        # AUDCTL: base clock (0 = 64 kHz)
     pk.write(0, audf)          # AUDF1
     pk.write(1, audc)          # AUDC1 (distortion + volume)
     out = []
@@ -466,6 +469,25 @@ def main():
     ui = bytearray((0x30 if (i // 8) % 2 == 0 else 0xD0) for i in range(512))
     ui[-16:] = bytes(16)
     out_syms.append(("snd_ui_wave", 512, 1, 0x02C0, 0, bytes(ui)))
+
+    # Per-class movement engine sounds (spec 5): the armored car keeps the
+    # ripped buzz (snd_move_wave above); the tank is a mid poly5 buzz and
+    # the battle cruiser a slow deep chug, synthesised as POKEY tones and
+    # tuned by ear. 4 KB each (code 4), one-shot with the 16-$00 halt.
+    for sym, audf, audc, dur, actl in (
+        ("snd_move_tank_wave", 0xB4, 0x28, 0.25, 0x00),      # mid buzz (poly5)
+        ("snd_move_cru_wave",  0x78, 0x28, 0.45, CLOCK_15),  # deep chug (~65 Hz)
+    ):
+        tone = render_tone(audf, audc, dur, actl)
+        nb, code = 4096, 4
+        u8 = to_u8(downsample(tone, nb))
+        u8 = u8[:-16] + bytes(16)
+        freq = max(1, min(0x1ff, round((nb / dur) / DOC_K)))
+        print(f"{sym}: AUDF ${audf:02X} AUDC ${audc:02X} {dur*1000:.0f}ms "
+              f"-> {nb}B freq ${freq:03X}")
+        out_syms.append((sym, nb, code, freq, max(1, round(dur * 60)), u8))
+        if a.wavdir:
+            write_wav(os.path.join(a.wavdir, f"{sym}.wav"), u8, nb / dur)
 
     # the samples live in a separate disk file (SOUNDS), loaded at
     # game start into a spare RAM bank; sound_samples.s carries only

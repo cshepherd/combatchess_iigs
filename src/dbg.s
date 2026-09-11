@@ -2094,22 +2094,23 @@ anim_check
  stz mv_moved
  rep #$20
  MX %00
- lda #SFX_MOVE
- jsr snd_play              ; the engine note as the unit slides
-* the moving unit's glyph (class 1-3) and colour register
+* the moving unit's class drives its engine note and its glyph
  lda mv_last_unit
  and #$00FF
  tax
  lda unit_class,x
  and #$00FF
+ pha                       ; class: 0 cruiser, 1 tank, 2 car
  inc
- sta anim_glyph
- lda unit_side,x
+ sta anim_glyph            ; glyph = class + 1
+ lda unit_side,x           ; X still = mv_last_unit
  and #$00FF
  tax
  lda side_glyph_reg,x
  and #$00FF
  sta anim_reg
+ pla                       ; class
+ jsr snd_move              ; per-class engine note (clobbers X, so do it last)
 * hide the unit at its destination and draw the clean backdrop
  lda mv_last_ty
  and #$00FF
