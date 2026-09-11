@@ -50,6 +50,8 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   lda #TEXT_OPAQUE
   jsr set_text_mode         ; inverse fields need the cell painted
   jsr title_palette_load
+  lda #10                   ; light gray border to match the grey plaque ground ($0AAA)
+  jsr set_border
   jsr ntp_start             ; start the title music (silent if absent)
 :show
   jsr draw_title

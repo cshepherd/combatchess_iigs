@@ -244,6 +244,26 @@ set_text_mode
  rts
 
 *----------------------------------------------------------
+* set_border - A (low byte) = one of the IIGS's 16 fixed
+* border colours (0-15). Sets the low nibble of the $C034
+* border register, preserving the high nibble (the clock /
+* battery-RAM data). Native, 16-bit M/X in and out.
+*----------------------------------------------------------
+set_border
+ MX %00
+ sep #$20
+ MX %10
+ and #$0F
+ sta rt0
+ ldal $E0C034
+ and #$F0
+ ora rt0
+ stal $E0C034
+ rep #$20
+ MX %00
+ rts
+
+*----------------------------------------------------------
 * draw_cstr - Draw the C string at str_ptr with its baseline
 * at (X, Y) in 320-mode pixels. Strings live in the part's
 * own code, so bank $00. Native, 16-bit M/X.

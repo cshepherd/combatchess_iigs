@@ -67,6 +67,12 @@ dbg_palette
  dw $0000,$0555,$05C3,$0261,$026E,$0A63,$0EEE,$0666
  dw $0999,$0AB4,$0741,$0BBB,$0F92,$04DE,$0800,$0FFF
 
+* Border colour (one of the 16 fixed border colours) per board
+* 1-10, to match each board's ground: dark green on the natural
+* boards (1-5, $0595), light grey on the abstract ones (6-9,
+* $0888), black on board 10 ($0000).
+dbg_border_tab dfb 4,4,4,4,4,10,10,10,10,0
+
 *----------------------------------------------------------
 * dbg_init - Palette and display state. Native 16-bit.
 *----------------------------------------------------------
@@ -80,6 +86,13 @@ dbg_init
  dex
  bpl :pal
  jsr art_set_board
+ lda cfg_board             ; border colour to match this board's ground
+ and #$00FF
+ dec
+ tax
+ lda dbg_border_tab,x
+ and #$00FF
+ jsr set_border
  stz cur_x
  stz cur_y
  stz mode
