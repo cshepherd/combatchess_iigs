@@ -102,7 +102,6 @@ dbg_init
  sta ai_delay             ; the computer's first action comes quickly
  lda #HUD_TOP
  sta hud_top
- jsr hud_defaults
  lda #TEXT_FORE
  jsr set_text_mode         ; the status lines' descenders overlap the next strip
  lda #1
@@ -561,12 +560,6 @@ do_select
 :ours
  lda sel_tmp
  sta sel_unit
- lda active_side
- and #$00FF
- asl
- tax
- lda sel_tmp
- sta hud_shown,x           ; the side's line keeps showing it
  lda #MODE_MOVE
  sta mode
  lda #s_move_hint
@@ -1403,53 +1396,10 @@ hud_draw_line
  ldx #HX_MARK
  ldy hud_y
  jsr draw_cstr
-* the unit
- jsr hud_pick_unit
- sta hud_unit
- tax
- lda unit_terr_hp,x
- and #$00FF
- ldx #HX_SQ
- ldy #s_h_sq
- jsr hud_field
- ldx hud_unit
- lda unit_hp,x
- and #$00FF
- ldx #HX_GM
- ldy #s_h_gm
- jsr hud_field
- ldx hud_unit
- lda unit_ammo,x
- and #$00FF
- ldx #HX_AM
- ldy #s_h_am
- jsr hud_field
- ldx hud_unit
- lda unit_fuel,x
- and #$00FF
- sta hud_val
- lda mode
- cmp #MODE_MOVE
- bne :fuel
- lda active_side
- and #$00FF
- cmp hud_side
- bne :fuel
- lda sel_unit
- cmp #$FF
- beq :fuel
- ldx cur_x
- ldy cur_y
- jsr eng_move_validate
- bcc :fuel
- lda mv_fuel_after
- and #$00FF
- sta hud_val               ; spec 25.1: the fuel after that move
-:fuel
- lda hud_val
- ldx #HX_FL
- ldy #s_h_fl
- jmp hud_field3
+* the readout: the active side's unit under the cursor (or its
+* chosen unit) as SQ/GM/AM/FL, else the terrain under the
+* cursor named with its hit points, else nothing (hud_readout).
+ jmp hud_readout
 
 * draw_clock - redraw only the active side's clock digits in
 * place (clear the clock field, then the MM:SS), so the
@@ -1504,76 +1454,137 @@ draw_clock
  ldx #HX_CLOCK
  jmp draw_cstr
 
-* hud_pick_unit - the unit hud_side's line shows (see above).
-* Out: A = id.
-hud_pick_unit
+* hud_readout - draw the readout part of hud_side's line: on
+* the active side's line, the unit under the cursor (friend or
+* foe), or its chosen unit in move/fire mode, as SQ/GM/AM/FL;
+* over an empty square, the terrain named with its hit points;
+* else nothing. The original's live cursor readout (checklist
+* H10), in place of the old sticky remembered unit: the waiting
+* side and empty clear ground show only the clock. hud_side and
+* hud_y are set. Native 16-bit.
+hud_readout
  MX %00
  lda active_side
  and #$00FF
  cmp hud_side
- bne :remembered
+ beq :active
+ rts                       ; the waiting side shows only its clock
+:active
  lda sel_unit
  cmp #$FF
- bne :got
+ bne :chosen               ; a unit is chosen: show it (projected fuel)
  ldx cur_x
  ldy cur_y
  jsr eng_get_unit_at
- bcc :remembered
- tax
- lda unit_side,x
- and #$00FF
- cmp hud_side
- bne :remembered
- txa
- rts
-:remembered
- lda hud_side
- asl
- tax
- lda hud_shown,x
-:got
- rts
+ bcs :occupied             ; a unit stands here (either side)
+ jmp hud_draw_terrain      ; empty square -> name its terrain
+:occupied
+ sta hud_unit              ; friend or foe: show that unit's stats
+ bra hud_draw_unit
+:chosen
+ lda sel_unit
+ sta hud_unit
+* fall through to hud_draw_unit
 
-* hud_defaults - each side's remembered unit starts as its
-* Battle Cruiser (its first unit if it has none).
-hud_defaults
+* hud_draw_unit - SQ/GM/AM/FL for the unit id in hud_unit at
+* the four field columns. In move mode with that unit chosen,
+* FL is the fuel left after the pending move (spec 25.1). Only
+* reached for the active side.
+hud_draw_unit
  MX %00
- stz hud_side
-:side
- ldx hud_side
- lda side_first_id,x
+ ldx hud_unit
+ lda unit_terr_hp,x
  and #$00FF
- sta tmp
+ ldx #HX_SQ
+ ldy #s_h_sq
+ jsr hud_field
+ ldx hud_unit
+ lda unit_hp,x
+ and #$00FF
+ ldx #HX_GM
+ ldy #s_h_gm
+ jsr hud_field
+ ldx hud_unit
+ lda unit_ammo,x
+ and #$00FF
+ ldx #HX_AM
+ ldy #s_h_am
+ jsr hud_field
+ ldx hud_unit
+ lda unit_fuel,x
+ and #$00FF
  sta hud_val
- lda side_units,x
+ lda mode
+ cmp #MODE_MOVE
+ bne :fuel
+ lda sel_unit
+ cmp #$FF
+ beq :fuel
+ ldx cur_x
+ ldy cur_y
+ jsr eng_move_validate
+ bcc :fuel
+ lda mv_fuel_after
  and #$00FF
- sta tmp2
-:scan
- lda tmp2
- beq :store
- ldx tmp
- lda unit_class,x
- and #$00FF
- cmp #CLASS_CRUISER
- bne :more
- lda tmp
- sta hud_val
- bra :store
-:more
- inc tmp
- dec tmp2
- bra :scan
-:store
- lda hud_side
- asl
- tax
+ sta hud_val               ; spec 25.1: the fuel after that move
+:fuel
  lda hud_val
- sta hud_shown,x
- inc hud_side
- lda hud_side
- cmp #2
- bcc :side
- rts
+ ldx #HX_FL
+ ldy #s_h_fl
+ jmp hud_field3
+
+* hud_draw_terrain - name the terrain under the cursor at the
+* SQ column, for the roaming active side over a square with no
+* friendly unit: TREE / BRIDGE with their live hit points,
+* water or purple "OK TO SHOOT ACROSS", mountains "IMPASSABLE",
+* and nothing at all for clear ground or the abstract open
+* cells. Verified against the Atari original in atari800
+* (checklist H10). Native 16-bit.
+hud_draw_terrain
+ MX %00
+ ldx cur_x
+ ldy cur_y
+ jsr eng_cell_readout      ; A = TERR_*, cell_hp = its terr_hp
+ cmp #TERR_TREE
+ beq :tree
+ cmp #TERR_BRIDGE
+ beq :bridge
+ cmp #TERR_WATER
+ beq :cross
+ cmp #TERR_PURPLE
+ beq :cross
+ cmp #TERR_MOUNTAIN
+ beq :mtn
+ rts                       ; clear ground or an abstract open cell
+:tree
+ lda #s_terr_tree
+ bra :named
+:bridge
+ lda #s_terr_bridge
+:named
+ pha
+ jsr lb_reset
+ pla
+ jsr lb_str
+ lda cell_hp
+ and #$00FF
+ jsr lb_dec2
+ jsr lb_end
+ ldx #HX_SQ
+ jmp hud_text
+:cross
+ lda #s_terr_water
+ bra :plain
+:mtn
+ lda #s_terr_mtn
+:plain
+ pha
+ jsr lb_reset
+ pla
+ jsr lb_str
+ jsr lb_end
+ ldx #HX_SQ
+ jmp hud_text
 
 * hud_field - A = value, X = x, Y = label: "SQ=15," at x on
 * the line; hud_field3 three digits and no comma.
@@ -2422,6 +2433,27 @@ eng_get_unit_at
  and #$00FF
  rts
 
+* eng_cell_readout - X = x, Y = y: A = TERR_* at that cell and
+* cell_hp = its terr_hp (an empty destructible square's hit
+* points). For the HUD's terrain readout. Native 16-bit.
+eng_cell_readout
+ MX %00
+ sep #$30
+ MX %11
+ phx
+ phy
+ jsr cell_index            ; A = y*20 + x; preserves X, Y
+ tax
+ lda terr_hp,x
+ sta cell_hp
+ ply
+ plx
+ jsr get_cell              ; A = TERR_* at (X, Y)
+ rep #$30
+ MX %00
+ and #$00FF
+ rts
+
 eng_turn_end
  MX %00
  sep #$30
@@ -2595,6 +2627,14 @@ s_h_am          asc 'AM='
                 dfb 0
 s_h_fl          asc 'FL='
                 dfb 0
+s_terr_tree     asc 'TREE = '
+                dfb 0
+s_terr_bridge   asc 'BRIDGE = '
+                dfb 0
+s_terr_water    asc 'OK TO SHOOT ACROSS'
+                dfb 0
+s_terr_mtn      asc 'IMPASSABLE'
+                dfb 0
 s_zero          asc '0'
                 dfb 0
 s_moves         asc '  MOVES '
@@ -2631,7 +2671,7 @@ hud_side   ds 2
 hud_y      ds 2
 hud_x      ds 2
 hud_val    ds 2
-hud_shown  ds 4            ; each side's remembered unit, a word per side
+cell_hp    ds 2            ; terr_hp of the cell under the cursor (eng_cell_readout)
 ai_delay   ds 2
 anim_glyph   ds 2
 anim_reg     ds 2
