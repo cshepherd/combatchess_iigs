@@ -1284,7 +1284,8 @@ test_line_trace
  lda ln_fuel_pen
  jsr check_eq
  stz terrain_fuel_penalty+TERR_TREE
- stz terrain_move_penalty+TERR_TREE
+ lda #1                    ; restore the default tree move penalty (TREE = 1)
+ sta terrain_move_penalty+TERR_TREE
 * A one-step line has no cells between.
  ldx #80                   ; case K2: (0,0)-(1,0)
  stx t_class
@@ -2005,8 +2006,9 @@ test_events
 * fields (16); range beats path in the refusal order,
 * diagonals, non-lines, off board (7); units in the way,
 * with and without the rule (4); water and mountain (3);
-* trees passable, then with penalties (5); fuel exactly
-* enough, then none, and no event on refusal (10); a dead
+* trees, each entered counting as +1 effective distance (5);
+* fuel exactly enough, then none, and no event on refusal (10);
+* a dead
 * unit (1); the car's reach (7); the cruiser's (6); a black
 * unit (2). 73 checks.
 *----------------------------------------------------------
@@ -2229,74 +2231,70 @@ test_move
  ldx #2
  ldy #1
  jsr mv_case               ; west 3, through the mountain at (3,1)
-* trees: passable, then with the penalty tables set
+* trees: each tree entered counts as one square further, for
+* both the allowance and the fuel (measured on the Atari); the
+* default terrain_move_penalty has TREE = 1, so no table poking
  lda #MV_OK
  sta expect
  lda #1
- ldx #9
+ ldx #7
  ldy #1
- jsr mv_case               ; east 4 through the tree
+ jsr mv_case               ; east 2 to (7,1), all clear: eff 2
+ lda #10
+ sta expect
+ lda mv_cost
+ jsr check_eq              ; fuel(2) = 10, no tree in the path
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #8
+ ldy #1
+ jsr mv_case               ; east 3 onto the tree at (8,1): eff 4
  lda #28
  sta expect
  lda mv_cost
- jsr check_eq
- lda #5
- sta terrain_fuel_penalty+TERR_TREE
- lda #1
- sta terrain_move_penalty+TERR_TREE
+ jsr check_eq              ; fuel(3 + 1 tree) = fuel(4) = 28
  lda #MV_TOO_FAR
  sta expect
  lda #1
  ldx #9
  ldy #1
- jsr mv_case               ; allowance 4 - 1 < 4
- lda #MV_OK
- sta expect
- lda #1
- ldx #8
- ldy #1
- jsr mv_case               ; east 3 onto the tree
- lda #23
- sta expect
- lda mv_cost
- jsr check_eq              ; 18 + 5
- stz terrain_fuel_penalty+TERR_TREE
- stz terrain_move_penalty+TERR_TREE
-* fuel
- lda #27
+ jsr mv_case               ; east 4 through the tree: eff 5 > allowance 4
+* fuel: exactly enough, then not, and no event on a refusal
+ lda #9
  sta unit_fuel+1
  lda #MV_NO_FUEL
  sta expect
  lda #1
- ldx #9
+ ldx #7
  ldy #1
- jsr mv_case               ; costs 28
- lda #MV_OK
- sta expect
- lda #1
- ldx #8
- ldy #1
- jsr mv_case               ; costs 18
- lda #18
- sta expect
- lda mv_cost
- jsr check_eq
- lda #28
+ jsr mv_case               ; east 2 costs 10 > 9
+ lda #10
  sta unit_fuel+1
  lda #MV_OK
  sta expect
  lda #1
- ldx #9
+ ldx #7
+ ldy #1
+ jsr mv_case               ; costs exactly 10
+ lda #10
+ sta expect
+ lda mv_cost
+ jsr check_eq
+ lda #MV_OK
+ sta expect
+ lda #1
+ ldx #7
  ldy #1
  jsr move_execute          ; exactly enough
  jsr check_eq
  stz expect
  lda unit_fuel+1
  jsr check_eq              ; and now dry
- lda #9
+ lda #7
  sta expect
  lda unit_x+1
- jsr check_eq
+ jsr check_eq              ; moved east 2 to (7,1)
  jsr event_pop
  lda #EV_UNIT_MOVED
  sta expect
@@ -2305,11 +2303,11 @@ test_move
  lda #MV_NO_FUEL
  sta expect
  lda #1
- ldx #9
- ldy #2
- jsr move_execute          ; one square costs 4
+ ldx #8
+ ldy #1
+ jsr move_execute          ; east 1 onto the tree costs fuel(2) = 10
  jsr check_eq
- lda #9
+ lda #7
  sta expect
  lda unit_x+1
  jsr check_eq              ; did not move

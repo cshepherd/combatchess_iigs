@@ -65,12 +65,18 @@ move_validate
  bcc :too_far
  jsr move_path_clear
  bcc :blocked
-* fuel: the table cost plus any tree surcharge
+* fuel: the table cost at the EFFECTIVE distance -- each tree
+* square entered counts as one square further (measured on the
+* Atari original: cruiser 1 tree = 27 = fuel(2), car 3 trees =
+* 21 = fuel(6)) -- plus any flat surcharge (none at present)
+ lda ln_dist
+ clc
+ adc ln_move_pen           ; effective distance = squares + trees
+ tay
  ldx mv_unit
  lda unit_class,x
  ldx ln_orient
- ldy ln_dist
- jsr fuel_cost             ; a legal distance, so never FUEL_NONE
+ jsr fuel_cost             ; eff distance <= allowance, so never FUEL_NONE
  clc
  adc ln_fuel_pen
  bcs :no_fuel              ; past 255: nobody can pay

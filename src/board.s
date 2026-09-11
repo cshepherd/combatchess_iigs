@@ -105,14 +105,17 @@ terr_max_hp dfb 0,1,0,15,0,0,0,8,0,0
 * Movement penalties by terrain type (spec 9.4, 19.1). The
 * manual says trees cost extra fuel and reduce the move
 * allowance but gives no numbers.
-* The printed manual confirms trees cost MORE fuel and REDUCE
-* the movement allowance (and block fire), so both are known
-* nonzero for TREE. The exact magnitudes are not tabulated in
-* the manual; still UNVERIFIED (entries 0 for now), to be read
-* from the original's move-mode projected-fuel line. Movement
-* code must read these, not assume them.
-terrain_move_penalty dfb 0,0,0,0,0,0,0,0,0,0   ; squares off the allowance
-terrain_fuel_penalty dfb 0,0,0,0,0,0,0,0,0,0   ; extra fuel per square entered
+* Movement penalties by terrain type. MEASURED 2026-09-11 on
+* the Atari original (move-mode projected-fuel readout): each
+* TREE square entered counts as ONE extra square of movement,
+* for both the fuel cost and the movement allowance -- so a
+* move's fuel is fuel_cost(squares + trees) and its allowance
+* cost is squares + trees (move.s reads terrain_move_penalty as
+* that +distance). Cruiser 1 tree = 27 = fuel(2); car 3 trees =
+* 21 = fuel(6). No flat per-square fuel surcharge was seen, so
+* terrain_fuel_penalty stays 0 (kept for future flat costs).
+terrain_move_penalty dfb 0,1,0,0,0,0,0,0,0,0   ; +squares of effective distance (TREE=1)
+terrain_fuel_penalty dfb 0,0,0,0,0,0,0,0,0,0   ; flat extra fuel per square (none)
 
 *----------------------------------------------------------
 * cell_in_bounds - Is (X, Y) on the board?
