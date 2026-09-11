@@ -379,3 +379,27 @@ KP5 is keypad-CENTRE, not down -- `tools/atari_cursor_capture.py`'s
 `down: KP5` is a bug), RCTRL = trigger. The cursor board index is $00BC.
 Committing a scripted MOVE/FIRE (to measure the tree penalty etc.) still
 needs the move-mode box driven, which was not solved this session.
+
+## Turn economy (Section 34, measured 2026-09-11)
+
+Driven on the Atari original (board 1, Red human) after cracking the
+move input: cursor mode cycles FIRE -> SELECT -> MOVE with the trigger;
+in MOVE mode nudge the box to the destination (verify via the bottom
+status line losing the unit's `SQ=`) and press the trigger to commit.
+A robust "nudge until the box is off the unit, fire, verify the record
+moved" loop commits moves reliably (bare single pushes are flaky).
+
+- **The game's moves-remaining counter is the byte at $2731** (per
+  active side, = moves-per-turn at turn start). Across three moves it
+  read 3 -> 2 -> 1 -> 3: it resets the instant the last allowed move is
+  made. So **the turn auto-ends after the last move** (no START press).
+  Matches `rule_auto_end_turn = 1`.
+- **Firing does not consume a move** -- inferred, not directly measured.
+  The fire-mode cross would not respond to scripted joystick input (it
+  never moved to a target, even with a Black unit poked adjacent to the
+  Red cruiser at (0,0)), so a shot could not be driven to watch $2731.
+  The manual's Shoot Option 2 ("all firing must be done before
+  movement") implies moves and shots are separate allowances, and our
+  engine already keeps `moves_used` and `turn_shots` separate. Left as
+  inferred per the user's call; a direct check would watch the computer
+  (Black) fire and see whether $2731 drops on a shot.

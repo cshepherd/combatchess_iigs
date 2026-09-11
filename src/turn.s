@@ -59,10 +59,14 @@ opt_moves_per_turn dfb 3   ; 1..20
 opt_shoot_option   dfb SHOOT_ANY
 opt_time_minutes   dfb 10,10   ; per side, 1..30 (the original sets Black and Red apart)
 
-* UNVERIFIED (spec 15.4, 34): whether the turn ends by itself
-* after the last allowed move or waits for the player, who
-* under Shoot Option 1 might still want to fire. Ends by
-* itself, as spec 15.4 reads, until measured.
+* VERIFIED 2026-09-11 (Atari original, board 1): the turn ends
+* by itself after the last allowed move -- the game's move
+* counter resets for the next turn the instant the last move
+* is made, no START needed. Firing does NOT consume a move:
+* moves and shots are separate allowances (inferred from the
+* manual's Shoot Option 2, "all firing before movement," and
+* matched here by moves_used vs turn_shots; the fire-mode
+* input could not be scripted for a direct executable check).
 rule_auto_end_turn dfb 1
 
 *----------------------------------------------------------
@@ -271,8 +275,10 @@ turn_fire_at
  clc
  rts
 
-* tn_fire_after - A shot went off: count it, and a destroyed
-* enemy Battle Cruiser ends the game (spec 17.1).
+* tn_fire_after - A shot went off: count it in turn_shots,
+* kept separate from moves_used so firing does not spend a
+* move (spec 34, matching the manual). A destroyed enemy
+* Battle Cruiser ends the game (spec 17.1).
 tn_fire_after
  MX %11
  inc turn_shots
