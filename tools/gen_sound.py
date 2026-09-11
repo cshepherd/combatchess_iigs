@@ -384,6 +384,10 @@ def main():
         # neighbours) and, for the 16 KB blast, froze the whole machine (even
         # the heartbeat clock) for ~8 s. The dropped final sample is inaudible.
         u8 = to_u8(downsample(buf, nbytes))
+        if kind != "fire":
+            u8 = u8[:-16] + bytes(16)  # 16 $00 halt the direct-DOC one-shot;
+                                       # the cannon trill loops (free-run), so
+                                       # it must have no $00 to halt on
         # play the whole buffer back over the sound's real duration
         read_rate = nbytes / dur
         freq = max(1, min(0x1ff, round(read_rate / DOC_K)))
@@ -405,12 +409,12 @@ def main():
     # the low, few-cycle tones audible) but fade OUT to zero (fade=True) so
     # the DOC oscillator does not step from the last sample value back to
     # silence, which would click.
-    for sym, audf, audc, dur, fade in (
-            ("snd_tick_wave", 0x60, 0xAF, 0.017, False),
-            ("snd_beep_wave", 0x0C, 0xAF, 0.017, False),
-            ("snd_place_cru_wave",  0xF3, 0xAF, 0.017, True),
-            ("snd_place_tank_wave", 0x79, 0xAF, 0.017, True),
-            ("snd_place_car_wave",  0x3C, 0xAF, 0.017, True)):
+    for sym, audf, audc, dur, fade, zerotail in (
+            ("snd_tick_wave", 0x60, 0xAF, 0.017, False, True),
+            ("snd_beep_wave", 0x0C, 0xAF, 0.017, False, True),
+            ("snd_place_cru_wave",  0xF3, 0xAF, 0.017, True, True),
+            ("snd_place_tank_wave", 0x79, 0xAF, 0.017, True, True),
+            ("snd_place_car_wave",  0x3C, 0xAF, 0.017, True, True)):
         code = 0
         nbytes = 256 << code
         buf = downsample(render_tone(audf, audc, dur), nbytes)
@@ -420,6 +424,11 @@ def main():
                 w = 0.5 - 0.5 * math.cos(math.pi * (i + 1) / (k + 1))
                 buf[-1 - i] *= w
         u8 = to_u8(buf)
+        if zerotail:
+            # A run of 16 $00 bytes at the tail halts the DOC oscillator in
+            # one-shot mode (a single zero can be strided over; 16 covers the
+            # resolution). The cursor beep and placement tones play direct-DOC.
+            u8 = u8[:-16] + bytes(16)
         read_rate = nbytes / dur
         freq = max(1, min(0x1ff, round(read_rate / DOC_K)))
         print(f"{sym}: {dur*1000:.0f} ms tone -> [{nbytes}] "
@@ -440,6 +449,7 @@ def main():
             dur = (e - s) / (SCANLINE_HZ / a.interval)
             buf = render_burst(trows, s, e, a.interval)
             u8 = to_u8(downsample(buf, nbytes))
+            u8 = u8[:-16] + bytes(16)      # 16 $00 halt the direct-DOC one-shot
             read_rate = nbytes / dur
             freq = max(1, min(0x1ff, round(read_rate / DOC_K)))
             print(f"snd_turn_wave: rows {s}-{e} ({dur*1000:.0f} ms) "
@@ -450,6 +460,12 @@ def main():
                 write_wav(os.path.join(a.wavdir, "snd_turn_wave.wav"), u8, read_rate)
         else:
             print("!! no fanfare (channel-2 sweep) found in", a.rec_turn)
+
+    # The invalid-move/shot UI buzz: a square wave (period 16 bytes)
+    # played direct-DOC one-shot like the others, ending in a 16-$00 halt.
+    ui = bytearray((0x30 if (i // 8) % 2 == 0 else 0xD0) for i in range(512))
+    ui[-16:] = bytes(16)
+    out_syms.append(("snd_ui_wave", 512, 1, 0x02C0, 0, bytes(ui)))
 
     # the samples live in a separate disk file (SOUNDS), loaded at
     # game start into a spare RAM bank; sound_samples.s carries only

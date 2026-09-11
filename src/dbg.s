@@ -200,8 +200,7 @@ turn_check
 * before the first turn; the loop's draw_all then adds the HUD
 * and the turn fanfare. Native 16-bit.
 *----------------------------------------------------------
-PLACE_TONE  = 2              ; >= 2 ticks so the 60 Hz clock cannot truncate
-PLACE_GAP   = 9              ; the 17 ms beep; 2 + 9 = 11/60 s ~ 183 ms/piece
+PLACE_FRAMES = 11            ; 11/60 s ~ 183 ms between pieces, as the Atari
 place_animation
  MX %00
  lda #1
@@ -244,32 +243,18 @@ place_animation
  lda #1
  sta units_hidden
  lda pl_class
- jsr snd_place
-* let the beep play its whole sample (>= PLACE_TONE ticks so the
-* coarse 60 Hz clock cannot cut the 17 ms tone down to a click),
-* then stop it cleanly and hold silent for the rest of the step.
-* Paced off _GetTick because wait_vbl's $C019 poll hangs before
-* the game loop is running.
+ jsr snd_place              ; direct-DOC one-shot: self-halts on its $00 tail
+* hold ~183 ms before the next piece, paced off _GetTick
+* (wait_vbl's $C019 poll hangs before the game loop runs)
  jsr snd_gettick
  clc
- adc #PLACE_TONE
+ adc #PLACE_FRAMES
  sta pl_deadline
-:tone
+:wait
  jsr snd_gettick
  sec
  sbc pl_deadline
- bmi :tone
- lda #SFX_PLACE
- jsr snd_stop
- jsr snd_gettick
- clc
- adc #PLACE_GAP
- sta pl_deadline
-:gap
- jsr snd_gettick
- sec
- sbc pl_deadline
- bmi :gap
+ bmi :wait
 :nextid
  ldy pl_id
  iny
@@ -1721,10 +1706,10 @@ shot_check
  rep #$20
  MX %00
  lda #SFX_CANNON
- jsr snd_play_loop         ; a high trill for the whole flight
+ jsr snd_play              ; a free-run trill (control $00) for the whole flight
  jsr draw_shot             ; the projectile travels attacker -> target
  lda #SFX_CANNON
- jsr snd_stop              ; cut the trill the instant it lands
+ jsr snd_stop              ; halt the trill the instant it lands
  lda fr_shot_hit
  and #$00FF
  beq :miss                 ; a miss explodes where it came to rest

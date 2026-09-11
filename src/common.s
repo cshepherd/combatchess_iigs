@@ -464,21 +464,6 @@ wait_vbl
  bpl :lp2                  ; wait for next VBL to start
  rep $20
  MX %00
-* Per-frame sound maintenance, through a vector so it runs in
-* every loop (including the blocking move/shot animations) yet
-* stays out of TITLE and TEST. GAME points it at snd_tick;
-* elsewhere it is a no-op. Registers preserved for callers
-* that loop on wait_vbl (e.g. the animation hold counters).
- phy
- phx
- pha
- jsr snd_dispatch
- pla
- plx
- ply
  rts
-snd_dispatch
- jmp (snd_tick_vec)
-snd_noop
- rts
-snd_tick_vec dw snd_noop
+* (Direct-DOC effects halt themselves in one-shot mode, so
+* there is no longer any per-frame sound maintenance here.)

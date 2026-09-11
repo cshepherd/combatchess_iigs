@@ -1,125 +1,118 @@
 *----------------------------------------------------------
-* sound.s - DOC sound effects through the Sound Tool Set
-* (spec section 5, Milestone 5). PUT into game.s after the
-* board art and before common.s. Native 16-bit like the rest
-* of the display layer.
+* sound.s - DOC sound effects, driven directly through the
+* Ensoniq 5503 sound GLU (spec section 5, Milestone 5). PUT
+* into game.s after the board art and before common.s. Native
+* 16-bit like the rest of the display layer.
 *
-* toolbox_init has already run _SoundStartUp. The move, cannon
-* and explosion waveforms are ripped from the Atari original
-* (src/sound_samples.s, tools/gen_sound.py) as unsigned 8-bit
-* DOC waveforms and played with _FFStartSound, each on its own
-* generator and DOC RAM region so a cannon report and its
-* explosion overlap. wave_size is one byte less than the DOC
-* buffer, so the tool uses a single buffer (>= the buffer drops
-* it into SWAP/streaming, whose interrupt-driven refill loop
-* froze the machine for seconds). The tool still free-runs the
-* oscillator past the waveform's end, so snd_tick stops each
-* generator once the sample's own duration has elapsed - timed
-* from the 60 Hz _GetTick counter, not a per-loop tick, so the
-* stop lands on the sample's end however slow the game loop is
-* running (a per-loop countdown lagged to ~4.5 s behind a full
-* board redraw and left the oscillator screeching through DOC
-* RAM). The UI-feedback buzz is a small square wave built at
-* init. A missing DOC leaves the game mute rather than crashing.
+* toolbox_init has already run _SoundStartUp, which enables 32
+* oscillators (so osc_rate ~26.3 kHz) and sets the master
+* volume. Every effect is one waveform in DOC RAM played on a
+* dedicated oscillator in ONE-SHOT mode (control $02): the
+* oscillator halts itself when its accumulator strides onto a
+* $00 sample, so each waveform ends in a 16-byte $00 run (a
+* single zero can be stepped over at these resolutions). No
+* per-frame stop is needed. The shot trill is the one looping
+* voice (control $00, free-run) and is halted with snd_stop on
+* impact. Waveforms are ripped from the Atari original
+* (src/sound_samples.s, tools/gen_sound.py) and copied into
+* DOC RAM once by snd_load. A missing DOC leaves the game mute
+* rather than crashing.
 *----------------------------------------------------------
-FF_MODE = $01              ; free-form synthesiser mode byte
 
 * Effect indices passed to snd_play.
 SFX_MOVE    = 0
 SFX_CANNON  = 1
 SFX_EXPLODE = 2
-SFX_UI      = 3
+SFX_UI      = 3            ; invalid move/shot buzz
 SFX_TICK    = 4            ; play-clock tick, once a second
 SFX_BEEP    = 5            ; cursor-move click
-SFX_TURN    = 6            ; turn-start fanfare (rising two-voice sweep)
-SFX_PLACE   = 7            ; piece-placement beep, pitched per class by snd_place
-
-* One logical generator each so effects can sound together.
-GEN_MOVE    = 1
-GEN_CANNON  = 2
-GEN_EXPLODE = 3
-GEN_UI      = 4
-GEN_TICK    = 5
-GEN_BEEP    = 6
-GEN_TURN    = 7
-* Placement reuses the cursor beep's generator: the two never sound at the
-* same time (placement runs only at game start), and adding an eighth
-* generator disturbed the DOC oscillator setup in KEGS.
-GEN_PLACE   = GEN_BEEP
+SFX_TURN    = 6            ; turn-start fanfare
+* SFX_PLACE is not in the tables; snd_place drives it directly.
 
 *----------------------------------------------------------
-* snd_load - point the parameter blocks at the ripped samples
-* the launcher (cc.s) loaded into bank $02 at boot. Called by
-* GAME each run (the param blocks reload with the part, but
-* snd_blk / snd_loaded in page $11 persist). Native 16-bit.
+* Sound GLU and Ensoniq DOC (modelled on the ROM's
+* Set_doc_regs and ddiigs's libsound).
+*----------------------------------------------------------
+G_STAT  = $E1C03C          ; sound GLU control/status
+G_DATA  = $E1C03D          ; sound GLU data
+G_ADRL  = $E1C03E          ; GLU address low
+G_ADRH  = $E1C03F          ; GLU address high (DOC RAM)
+IRQVOL  = $E100CA          ; system 4-bit volume
+E_FREQL = $00              ; per-oscillator DOC register offsets
+E_FREQH = $20
+E_VOL   = $40
+E_WPAGE = $80
+E_CTRL  = $A0
+E_BTR   = $C0              ; table size (bits 3-5) + resolution (bits 0-2)
+PLACE_OSC = $14            ; oscillator 20, the placement voice
+
+*----------------------------------------------------------
+* snd_load - copy every waveform from the SOUNDS bank (loaded
+* into bank $02 at boot, snd_blk in page $11) into its DOC RAM
+* region, once per game. Native 16-bit. A missing SOUNDS file
+* leaves snd_loaded clear and the game mute.
 *----------------------------------------------------------
 snd_load
  MX %00
  lda snd_loaded
  and #$00FF
- beq :ret                  ; never loaded (mute)
- lda #snd_explode_wave_off
- ldx #snd_pb_explode
- jsr :one
- lda #snd_move_wave_off
- ldx #snd_pb_move
- jsr :one
- lda #snd_fire_wave_off
- ldx #snd_pb_cannon
- jsr :one
- lda #snd_tick_wave_off
- ldx #snd_pb_tick
- jsr :one
- lda #snd_beep_wave_off
- ldx #snd_pb_beep
- jsr :one
- lda #snd_turn_wave_off
- ldx #snd_pb_turn
- jsr :one
+ beq :ret
+ lda #$0000                ; explosion -> DOC $0000 (16 KB)
+ ldx #snd_explode_wave_off
+ ldy #16384
+ jsr doc_load
+ lda #$8000                ; move buzz -> DOC $8000 (8 KB)
+ ldx #snd_move_wave_off
+ ldy #8192
+ jsr doc_load
+ lda #$4000                ; cannon -> DOC $4000 (1 KB)
+ ldx #snd_fire_wave_off
+ ldy #1024
+ jsr doc_load
+ lda #$C800                ; UI buzz -> DOC $C800 (512 B)
+ ldx #snd_ui_wave_off
+ ldy #512
+ jsr doc_load
+ lda #$A000                ; tick -> DOC $A000
+ ldx #snd_tick_wave_off
+ ldy #256
+ jsr doc_load
+ lda #$A800                ; cursor beep -> DOC $A800
+ ldx #snd_beep_wave_off
+ ldy #256
+ jsr doc_load
+ lda #$6000                ; turn fanfare -> DOC $6000 (4 KB)
+ ldx #snd_turn_wave_off
+ ldy #4096
+ jsr doc_load
+ lda #$B000                ; placement beeps -> DOC $B000/$B100/$B200
+ ldx #snd_place_cru_wave_off
+ ldy #256
+ jsr doc_load
+ lda #$B100
+ ldx #snd_place_tank_wave_off
+ ldy #256
+ jsr doc_load
+ lda #$B200
+ ldx #snd_place_car_wave_off
+ ldy #256
+ jsr doc_load
 :ret
- rts
-* :one - A = sample offset in the bank, X = parameter block.
-* Writes wave_start (block base + offset) into the block.
-:one
- clc
- adc snd_blk
- sta 0,x                   ; wave_start low word
- lda snd_blk+2
- sta 2,x                   ; wave_start bank
  rts
 
 *----------------------------------------------------------
-* snd_init - build the UI-feedback buzz, seed the tick clock
-* and arm the per-frame stop. Call once, native 16-bit, after
-* snd_load.
+* snd_init - nothing to build now that the waveforms are all
+* in DOC RAM and the oscillators halt themselves. Kept so
+* game.s need not change. Native 16-bit.
 *----------------------------------------------------------
 snd_init
  MX %00
- ldx #0
-:buzz
- txa
- and #$0008
- bne :bhi
- lda #$3030
- bra :bst
-:bhi
- lda #$D0D0
-:bst
- sta snd_buzz,x
- inx
- inx
- cpx #SND_BUZZ_LEN
- bcc :buzz
-* seed the last-seen tick so the first snd_tick delta is ~0
- jsr snd_gettick
- sta snd_last_tick
- lda #snd_tick
- sta snd_tick_vec               ; wait_vbl now stops finished effects
  rts
 
 *----------------------------------------------------------
 * snd_gettick - return (A) the low 16 bits of the 60 Hz
-* _GetTick counter. Native 16-bit; clobbers A.
+* _GetTick counter, for the placement animation's pacing.
+* Native 16-bit; clobbers A.
 *----------------------------------------------------------
 snd_gettick
  MX %00
@@ -134,191 +127,126 @@ snd_gettick
  rts
 
 *----------------------------------------------------------
-* snd_tick - called from wait_vbl every frame. Counts each
-* playing effect down by the real ticks elapsed since the
-* last call and stops its generator when the sample's own
-* duration is up (the tool free-runs a one-shot forever
-* otherwise). Native 16-bit; wait_vbl preserves the caller's
-* registers.
-*----------------------------------------------------------
-snd_tick
- MX %00
- jsr snd_gettick           ; A = now, snd_now = now
- sec
- sbc snd_last_tick         ; delta = now - last
- cmp #$0100
- bcc :dok
- lda #$00FF                ; clamp a huge gap to 255 frames
-:dok
- sta snd_delta
- lda snd_now
- sta snd_last_tick         ; remember for next time
- sep #$30
- MX %11
- ldx #0                    ; effect / generator index 0..3
-:t
- lda snd_cd,x
- beq :next                 ; not playing
- cmp snd_delta
- bcc :stop                 ; countdown < elapsed -> done
- beq :stop
- sec
- sbc snd_delta
- sta snd_cd,x
- bra :next
-:stop
- lda snd_loopf,x           ; looping effect (the flight trill)?
- beq :hardstop
-* re-trigger: replay the one-shot and re-arm, keeping the trill going
- phx
- txa
- rep #$30
- MX %00
- and #$00FF
- jsr snd_play_loop
- sep #$30
- MX %11
- plx
- bra :next
-:hardstop
- stz snd_cd,x
- phx                       ; save loop index (1 byte, 8-bit)
- lda snd_gen8,x            ; generator number
- rep #$30
- MX %00
- and #$00FF
- tay
- lda #$0001
-:sh
- asl
- dey
- bne :sh
- pha                       ; 16-bit mask (1 << generator)
- ldx #$0F08
- jsl TOOLBOX               ; _FFStopSound
- sep #$30
- MX %11
- plx
-:next
- inx
- cpx #8
- bne :t
- rep #$30
- MX %00
- rts
-
-*----------------------------------------------------------
-* snd_play - play effect A (SFX_*). Stops that effect's
-* generator first so a re-trigger never hits gen-busy, then
-* _FFStartSound with the effect's parameter block, and arms
-* the stop countdown. Native 16-bit. Clobbers A, X, Y. Errors
-* from a missing DOC are ignored (the game stays mute).
+* snd_play - play effect A (SFX_MOVE..SFX_TURN) on its
+* oscillator: halt it, program table size/resolution,
+* frequency, volume and waveform page, then start it. Most
+* are one-shot (control $02, self-halting on the $00 tail);
+* the cannon is free-run ($00) and loops until snd_stop.
+* Native 16-bit. Clobbers A, X, Y. Mute if never loaded.
 *----------------------------------------------------------
 snd_play
  MX %00
  and #$00FF
- asl
- tax
- stx snd_fx                ; effect*2
- lda snd_gen_tab,x
- sta snd_gen
- lda snd_pb_tab,x
- sta snd_pbptr
-* _FFStopSound(1 << generator)
- lda snd_gen
- tay
- lda #$0001
-:sh
- asl
- dey
- bne :sh
  pha
- ldx #$0F08
- jsl TOOLBOX
-* _FFStartSound((generator << 8) | FF_MODE, parmBlock)
- lda snd_gen
- xba
- ora #FF_MODE
- pha
- pea $0000                 ; parameter block bank ($00)
- lda snd_pbptr
- pha
- ldx #$0E08
- jsl TOOLBOX
-* arm the stop countdown (in ticks): the tool free-runs the
-* one-shot, so snd_tick halts the generator after the sample's
-* own duration, timed off _GetTick.
- lda snd_fx
- lsr                       ; effect index
- tax
- sep #$20
- MX %10
- lda snd_frames,x
- sta snd_cd,x              ; one byte per effect (frames < 256)
- stz snd_loopf,x           ; one-shot by default
- rep #$20
- MX %00
- rts
-
-*----------------------------------------------------------
-* snd_play_loop - play effect A (SFX_*) and mark it looping, for
-* the shot-in-flight trill: snd_tick re-triggers the one-shot
-* each time its countdown expires (the tool cannot cleanly loop
-* a waveform), giving a repeating beep until snd_stop cuts it on
-* impact. Native 16-bit. Clobbers A, X, Y.
-*----------------------------------------------------------
-snd_play_loop
- MX %00
- pha                       ; save effect
- jsr snd_play              ; play once + arm countdown (clears loopf)
- pla
+ lda snd_loaded
  and #$00FF
- tax
- sep #$20
- MX %10
- lda #1
- sta snd_loopf,x           ; mark looping so snd_tick re-triggers it
- rep #$20
- MX %00
+ bne :ok
+ pla
  rts
+:ok
+ pla
+ sta snd_fx
+ tax
+ lda snd_osc,x
+ and #$00FF
+ sta snd_osc_cur
+* halt the oscillator first, for a clean re-trigger
+ clc
+ adc #E_CTRL
+ tax
+ lda #$01
+ jsr doc_setreg
+* EBTR = (code<<3) | code   (table size = resolution = the buffer code)
+ ldx snd_fx
+ lda snd_codeT,x
+ and #$00FF
+ sta snd_tmp
+ asl
+ asl
+ asl
+ ora snd_tmp
+ pha
+ lda snd_osc_cur
+ clc
+ adc #E_BTR
+ tax
+ pla
+ jsr doc_setreg
+* frequency low then high
+ lda snd_fx
+ asl
+ tax
+ lda snd_freqT,x
+ sta snd_tmp
+ lda snd_osc_cur
+ clc
+ adc #E_FREQL
+ tax
+ lda snd_tmp
+ jsr doc_setreg
+ lda snd_osc_cur
+ clc
+ adc #E_FREQH
+ tax
+ lda snd_tmp
+ xba
+ jsr doc_setreg
+* volume
+ ldx snd_fx
+ lda snd_volT,x
+ and #$00FF
+ pha
+ lda snd_osc_cur
+ clc
+ adc #E_VOL
+ tax
+ pla
+ jsr doc_setreg
+* waveform start page
+ ldx snd_fx
+ lda snd_pageT,x
+ and #$00FF
+ pha
+ lda snd_osc_cur
+ clc
+ adc #E_WPAGE
+ tax
+ pla
+ jsr doc_setreg
+* start it: one-shot ($02) or free-run loop ($00)
+ ldx snd_fx
+ lda snd_ctrlT,x
+ and #$00FF
+ pha
+ lda snd_osc_cur
+ clc
+ adc #E_CTRL
+ tax
+ pla
+ jmp doc_setreg
 
 *----------------------------------------------------------
-* snd_stop - halt effect A (SFX_*): clear its loop flag and
-* countdown, then _FFStopSound its generator. Native 16-bit.
-* Clobbers A, X, Y.
+* snd_stop - halt effect A's oscillator (the trill on impact).
+* Native 16-bit. Clobbers A, X.
 *----------------------------------------------------------
 snd_stop
  MX %00
  and #$00FF
  tax
- phx                       ; effect (2 bytes)
- asl
- tay
- lda snd_gen_tab,y
- tay                       ; generator
- lda #$0001
-:sh
- asl
- dey
- bne :sh
- pha
- ldx #$0F08
- jsl TOOLBOX               ; _FFStopSound(1 << generator)
- plx                       ; effect
- sep #$20
- MX %10
- stz snd_cd,x
- stz snd_loopf,x
- rep #$20
- MX %00
- rts
+ lda snd_osc,x
+ and #$00FF
+ clc
+ adc #E_CTRL
+ tax
+ lda #$01                  ; halt
+ jmp doc_setreg
 
 *----------------------------------------------------------
 * snd_place - the piece-placement beep for class A (0 cruiser,
-* 1 tank, 2 car), pitched by class. Points the shared
-* placement block at that class's sample, then plays it as
-* SFX_PLACE. A no-op when the samples never loaded. Native
-* 16-bit. Clobbers A, X, Y.
+* 1 tank, 2 car), pitched by class, on PLACE_OSC in one-shot
+* mode. The three samples were copied into DOC RAM by
+* snd_load. A no-op when the samples never loaded. Native
+* 16-bit.
 *----------------------------------------------------------
 snd_place
  MX %00
@@ -331,120 +259,109 @@ snd_place
  rts
 :ok
  pla
- asl                       ; class*2 into place_off_tab
  tax
- lda place_off_tab,x
- clc
- adc snd_blk
- sta snd_pb_place          ; wave_start low word
+ lda place_page_tab,x
+ and #$00FF
+ sta snd_tmp               ; the sample's DOC RAM start page
+ ldx #E_CTRL+PLACE_OSC
+ lda #$01                  ; halt first
+ jsr doc_setreg
+ ldx #E_BTR+PLACE_OSC
+ lda #$00                  ; code 0: 256-byte table, resolution 0
+ jsr doc_setreg
+ ldx #E_FREQL+PLACE_OSC    ; all three share the frequency
+ lda #<snd_place_cru_wave_freq
+ jsr doc_setreg
+ ldx #E_FREQH+PLACE_OSC
+ lda #>snd_place_cru_wave_freq
+ jsr doc_setreg
+ ldx #E_VOL+PLACE_OSC
+ lda #$C0
+ jsr doc_setreg
+ ldx #E_WPAGE+PLACE_OSC
+ lda snd_tmp
+ jsr doc_setreg
+ ldx #E_CTRL+PLACE_OSC     ; one-shot + GO; halts on the $00 tail
+ lda #$02
+ jmp doc_setreg
+
+*----------------------------------------------------------
+* doc_setreg - write value A (low byte) to DOC register X
+* (low byte, e.g. E_CTRL+osc) through the sound GLU. Native
+* 16-bit on entry/exit; waits for the GLU to be free.
+*----------------------------------------------------------
+doc_setreg
+ MX %00
+ sep #$20
+ MX %10                    ; 8-bit A, 16-bit X
+ pha                       ; save the value byte
+:busy ldal G_STAT
+ bmi :busy
+ ldal IRQVOL
+ and #$0F
+ stal G_STAT               ; register access, no auto-inc, + system volume
+ txa                       ; register number
+ stal G_ADRL
+ pla
+ stal G_DATA               ; the value
+ rep #$20
+ MX %00
+ rts
+
+*----------------------------------------------------------
+* doc_load - copy Y bytes from the SOUNDS bank (snd_blk)
+* offset X into DOC RAM at address A, via the GLU with auto-
+* increment. Uses rptr as a 24-bit source pointer. Native
+* 16-bit. Called by snd_load, once per waveform.
+*----------------------------------------------------------
+doc_load
+ MX %00
+ sta snd_tmp               ; DOC destination address
+ sty snd_len               ; byte count
+ stx rptr                  ; source offset (low word)
+ sep #$20
+ MX %10                    ; 8-bit A, 16-bit X/Y
  lda snd_blk+2
- sta snd_pb_place+2        ; wave_start bank
- lda #SFX_PLACE
- jmp snd_play
-
-place_off_tab dw snd_place_cru_wave_off,snd_place_tank_wave_off,snd_place_car_wave_off
+ sta rptr+2                ; source bank -> [rptr] is a 24-bit pointer
+:busy ldal G_STAT
+ bmi :busy
+ ldal IRQVOL
+ and #$0F
+ ora #$60                  ; DOC RAM ($40) + address auto-increment ($20)
+ stal G_STAT
+ lda snd_tmp
+ stal G_ADRL               ; destination low byte
+ lda snd_tmp+1
+ stal G_ADRH               ; destination high byte
+ ldy #$0000
+:copy lda [rptr],y
+ stal G_DATA               ; write; the GLU bumps the DOC address
+ iny
+ cpy snd_len
+ bne :copy
+ rep #$30
+ MX %00
+ rts
 
 *----------------------------------------------------------
-* Free-form-synth parameter blocks (18 bytes each): wave
-* start (long), wave size (word), frequency (word), DOC RAM
-* address (word, page in the high byte), DOC buffer size code
-* (word, 0=256 .. 7=32768 bytes), next wave (long, 0 = one
-* shot), volume (word, 0-255 in the low byte). DOC regions do
-* not overlap.
+* Per-effect direct-DOC voice tables (index = SFX_MOVE..
+* SFX_TURN): oscillator, DOC RAM start page, buffer-size code
+* (table size + resolution), frequency register, volume and
+* control mode ($02 one-shot, $00 free-run loop).
 *----------------------------------------------------------
-* Size, DOC size code and playback frequency come from the
-* generator (sound_samples.s). wave_size is one less than the
-* DOC buffer (256<<code), strictly smaller, so the tool copies
-* the wave into a SINGLE buffer and plays it one-shot; wave_size
-* >= the buffer needs a second buffer and drops the tool into
-* SWAP/streaming, whose interrupt-driven DOC refill loop froze
-* the whole machine for ~8 s on the 16 KB blast. wave_start is
-* 0 here and patched by snd_load to the loaded sample bank plus
-* each sound's offset.
-snd_pb_explode
- adrl 0                     ; the four-channel blast (patched)
- dw snd_explode_wave_size
- dw snd_explode_wave_freq
- dw $0000                  ; DOC $0000 (16384 bytes)
- dw snd_explode_wave_code
- adrl 0
- dw $00FF
-snd_pb_move
- adrl 0                     ; the poly5 engine buzz (patched)
- dw snd_move_wave_size
- dw snd_move_wave_freq
- dw $8000                  ; DOC $8000 (8192 bytes)
- dw snd_move_wave_code
- adrl 0
- dw $00B0
-snd_pb_cannon
- adrl 0                     ; the shot-in-flight trill (patched)
- dw snd_fire_wave_size
- dw $03E6                  ; 2.5 x snd_fire_wave_freq ($018F): high-pitched trill
- dw $4000                  ; DOC $4000, in the 16 KB gap after the blast:
-                           ; the loop's free-run runs out into silence
- dw snd_fire_wave_code
- adrl 0                    ; one-shot; snd_tick re-triggers it for the trill
- dw $00E0
-snd_pb_ui
- adrl snd_buzz
- dw SND_BUZZ_LEN-1         ; < buffer -> single-buffer one-shot
- dw $02C0
- dw $C800                  ; DOC $C800 (512 bytes)
- dw 1
- adrl 0
- dw $00A0
-snd_pb_tick
- adrl 0                     ; the play-clock tick (patched)
- dw snd_tick_wave_size
- dw snd_tick_wave_freq
- dw $A000                  ; DOC $A000 (256 bytes, run-out gap is $00)
- dw snd_tick_wave_code
- adrl 0
- dw $0090
-snd_pb_beep
- adrl 0                     ; the cursor-move beep (patched)
- dw snd_beep_wave_size
- dw snd_beep_wave_freq
- dw $A800                  ; DOC $A800 (256 bytes, run-out gap is $00)
- dw snd_beep_wave_code
- adrl 0
- dw $0060                  ; quiet - it clicks on every cursor step
-snd_pb_turn
- adrl 0                     ; the turn-start fanfare (patched)
- dw snd_turn_wave_size
- dw snd_turn_wave_freq
- dw $6000                  ; DOC $6000 (4096 bytes, run-out gap is $00)
- dw snd_turn_wave_code
- adrl 0
- dw $00FF
-snd_pb_place
- adrl 0                     ; wave_start, patched per beep by snd_place
- dw snd_place_cru_wave_size ; the three placement waves share size/freq/code
- dw snd_place_cru_wave_freq
- dw $A800                  ; DOC $A800, the cursor beep's region (reused; only
- dw snd_place_cru_wave_code ; ever one at a time, placement being at game start)
- adrl 0
- dw $00C0
+snd_osc   dfb 8,9,10,11,12,13,14
+snd_pageT dfb $80,$40,$00,$C8,$A0,$A8,$60
+snd_codeT dfb snd_move_wave_code,snd_fire_wave_code,snd_explode_wave_code
+          dfb snd_ui_wave_code,snd_tick_wave_code,snd_beep_wave_code
+          dfb snd_turn_wave_code
+snd_freqT dw snd_move_wave_freq,$04B0,snd_explode_wave_freq,snd_ui_wave_freq
+          dw snd_tick_wave_freq,snd_beep_wave_freq,snd_turn_wave_freq
+snd_volT  dfb $B0,$E0,$FF,$A0,$90,$60,$FF
+snd_ctrlT dfb $02,$00,$02,$02,$02,$02,$02
+place_page_tab dfb $B0,$B1,$B2   ; DOC RAM pages: cruiser, tank, car
 
-snd_pb_tab  da snd_pb_move,snd_pb_cannon,snd_pb_explode,snd_pb_ui
-            da snd_pb_tick,snd_pb_beep,snd_pb_turn,snd_pb_place
-snd_gen_tab dw GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI,GEN_TICK,GEN_BEEP,GEN_TURN,GEN_PLACE
-snd_gen8    dfb GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI,GEN_TICK,GEN_BEEP,GEN_TURN,GEN_PLACE
-* frames each effect plays before snd_tick stops it (its own
-* duration; UI a short fixed buzz). All < 256.
-snd_frames  dfb snd_move_wave_frames,snd_fire_wave_frames,snd_explode_wave_frames,10
-            dfb snd_tick_wave_frames,snd_beep_wave_frames,snd_turn_wave_frames
-            dfb snd_place_cru_wave_frames
-
-SND_BUZZ_LEN  = 512
-
-snd_gen   ds 2
-snd_pbptr ds 2
-snd_fx    ds 2
-snd_now   ds 2
-snd_last_tick ds 2
-snd_delta ds 2
-snd_cd    ds 8             ; one countdown byte per effect (ticks remaining)
-snd_loopf ds 8             ; per-effect: nonzero = re-trigger on expiry (trill)
-snd_buzz  ds SND_BUZZ_LEN+1
+snd_fx      ds 2            ; current effect index
+snd_osc_cur ds 2            ; its oscillator number
+snd_tmp     ds 2            ; scratch: page / dest address / code
+snd_len     ds 2            ; doc_load byte count
+snd_now     ds 2            ; snd_gettick low word
