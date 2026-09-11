@@ -2440,10 +2440,11 @@ mv_case
 * targets (3); trees block, water does not (2); no ammo (1);
 * the per-turn target rule and its reset (2); a hit with
 * every side effect and event (26); the same target again
-* (1); a miss (10); a bridge destroyed under a unit (21); a
+* (1); a miss (10); a bridge felled under a unit, taking it
+* down with it (26); a
 * kill, then the dead can neither be shot nor shoot (21);
 * damage floors at 0 (3); the cruiser's damage (2).
-* 112 checks.
+* 117 checks.
 *----------------------------------------------------------
 test_fire
  MX %11
@@ -2749,14 +2750,13 @@ test_fire
  ldx #12
  jsr fire_execute
  jsr check_eq
- lda #FR_HIT
+ lda #FR_KILL
  sta expect
  lda fr_outcome
- jsr check_eq
- lda #20
- sta expect
+ jsr check_eq              ; the bridge fell to water: a kill
+ stz expect
  lda unit_hp+12
- jsr check_eq
+ jsr check_eq              ; the unit went into the gap
  stz expect
  lda unit_terr_hp+12
  jsr check_eq
@@ -2766,11 +2766,10 @@ test_fire
  ldy #1
  jsr get_cell
  jsr check_eq              ; the felled bridge is a water gap
- lda #UF_ALIVE
- sta expect
+ stz expect
  lda unit_flags+12
  and #UF_ALIVE
- jsr check_eq              ; still there (UNVERIFIED)
+ jsr check_eq              ; destroyed with the felled bridge (spec 23.1)
  lda #EV_SHOT_FIRED
  jsr pop_type
  lda #EV_SHOT_HIT
@@ -2797,6 +2796,20 @@ test_fire
  sta expect
  lda ev_p3
  jsr check_eq              ; destroyed to a water gap, not clear
+ lda #EV_UNIT_DESTROYED
+ jsr pop_type              ; the unit follows the bridge down
+ lda #12
+ sta expect
+ lda ev_p0
+ jsr check_eq              ; the black tank
+ lda #5
+ sta expect
+ lda ev_p1
+ jsr check_eq
+ lda #1
+ sta expect
+ lda ev_p2
+ jsr check_eq
  jsr pop_none
 * a kill: the black car down to 4
  lda #4
@@ -2874,7 +2887,29 @@ test_fire
  lda unit_terr_hp+11
  jsr check_eq
  jsr events_clear
-* the cruiser hits for 5: north-east 4 at the black tank
+* the cruiser hits for 5: north-east 4 at the black tank,
+* restored to life on clear ground (the bridge felling above
+* took it down, so put it back for this damage check)
+ lda #TERR_CLEAR
+ ldx #5
+ ldy #1
+ jsr set_cell
+ lda #13                   ; occupant = tank id 12 + 1
+ ldx #5
+ ldy #1
+ jsr set_occupant
+ lda #UF_ALIVE
+ sta unit_flags+12
+ lda #20
+ sta unit_hp+12
+ lda #12
+ sta unit_terr_hp+12
+ lda #5
+ sta unit_x+12
+ lda #1
+ sta unit_y+12
+ ldx #SIDE_RED
+ jsr units_begin_turn
  lda #0
  ldx #12
  jsr fire_execute

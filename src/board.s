@@ -66,9 +66,12 @@ TF_SLOW     = $02   ; movement penalties apply (spec 9.4, 19.1)
 * so one TF_MOVE bit serves both until the Atari executable
 * shows otherwise (spec 34).
 *
-* UNVERIFIED (spec 34, board 9): whether GREY blocks fire
-* before it is destroyed, and what destroys it, since no
-* unit can stand on it. Sealed to both here.
+* VERIFIED 2026-09-11 (printed manual, board 9): GREY blocks
+* movement AND fire until destroyed; fire destroys it, and it
+* then becomes WHITE (open to move and fire). Sealed to both
+* here, destructible, terrain_after GREY -> WHITE. (PURPLE
+* permits fire but not movement; BLACK blocks both -- both
+* also confirmed against the manual.)
 terrain_flags
  dfb TF_FIRE+TF_MOVE                 ; CLEAR
  dfb TF_MOVE+TF_DESTRUCT+TF_SLOW     ; TREE
@@ -102,9 +105,12 @@ terr_max_hp dfb 0,1,0,15,0,0,0,8,0,0
 * Movement penalties by terrain type (spec 9.4, 19.1). The
 * manual says trees cost extra fuel and reduce the move
 * allowance but gives no numbers.
-* UNVERIFIED: every entry is 0 until measured on the Atari
-* executable (spec 34). Movement code must read these, not
-* assume them.
+* The printed manual confirms trees cost MORE fuel and REDUCE
+* the movement allowance (and block fire), so both are known
+* nonzero for TREE. The exact magnitudes are not tabulated in
+* the manual; still UNVERIFIED (entries 0 for now), to be read
+* from the original's move-mode projected-fuel line. Movement
+* code must read these, not assume them.
 terrain_move_penalty dfb 0,0,0,0,0,0,0,0,0,0   ; squares off the allowance
 terrain_fuel_penalty dfb 0,0,0,0,0,0,0,0,0,0   ; extra fuel per square entered
 

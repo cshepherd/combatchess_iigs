@@ -216,12 +216,11 @@ los_clear
  clc
  rts
 
-* Compatibility rules (spec 8.4, 24.4, 35). UNVERIFIED: the
-* manual does not say whether a unit blocks movement through
-* its square or blocks line of fire. Both default to the
-* spec's conservative reading (they do) until the Atari
-* executable is measured; Original Rules mode will then pin
-* them and Enhanced mode may expose them.
+* Compatibility rules (spec 8.4, 24.4, 35). VERIFIED
+* 2026-09-11: all units (friendly and enemy) block movement
+* through their square, and units block line of fire. Both
+* stay 1 in Original Rules mode; Enhanced mode may expose
+* them.
 rule_units_block_move dfb 1
 rule_units_block_los  dfb 1
 

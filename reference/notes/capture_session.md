@@ -324,3 +324,58 @@ Spec section 34 items settled or narrowed by this session:
   the last board row), and the border below the strip is brown
   ($36). With the computer playing both sides the lines show only
   the clocks.
+
+## Rules verified against the printed manual (2026-09-11)
+
+The full Combat Chess manual (`~/Downloads/combat_chess.pdf`, scanned,
+git-ignored, copyrighted) settled almost every Section-34 item without
+needing an executable measurement. Confirmed:
+
+- **Every numeric table in `src/tables.s` matches the manual exactly**:
+  `hit_table` (orthogonal 100..40 over range 1-11; diagonal 98..39
+  over range 1-8), `fuel_table` (cruiser 12,27 / 16; tank 4,10,18,28 /
+  5,17,33; car 1,3,6,10,15,21,28 / 1,5,11,19,28), and the per-class
+  `class_max_hp` 30/24/18, `class_terrain_hp` 15/12/9, `class_max_ammo`
+  16/16/8, `class_max_fuel` 240/240/160, `class_damage` 5/4/4,
+  `class_fire_orth/diag` 11-8/7-5/4-3, `class_move_orth/diag`
+  2-1/4-3/7-5. The rules engine (milestone 1) is faithful to the manual.
+- **Units block movement** (all pieces, friendly and enemy) and **block
+  line of fire** (`rule_units_block_move` / `rule_units_block_los` = 1).
+  User-confirmed and consistent with the manual.
+- **Trees** cost more fuel AND reduce the movement allowance, and block
+  fire. Magnitudes are NOT tabulated in the manual (`terrain_move_penalty`
+  / `terrain_fuel_penalty` still 0, the one known-wrong value; measure via
+  the original's move-mode projected-fuel line).
+- **Board 9**: GREY blocks move+fire until destroyed by fire, then opens
+  (-> WHITE); PURPLE fire-only; BLACK blocks both. Matches `terrain_flags`.
+- **Miss**: goes astray to a patch of ground or another unit (axial
+  one-tile perturbation); friendly units and terrain are vulnerable.
+  Matches `miss_resolve`. Exact scatter distribution still unmeasured.
+- **Stalemate = 4 idle turns**; out of time = loss; START ends the turn
+  early; OPTION surrenders; ESC pauses; SELECT cycles the status screens.
+- **Cursor model**: the fire button cycles FIRE -> SELECT -> MOVE; the
+  turn starts in FIRE. The inner white shape (P1 sprite at $4280) marks
+  the mode: cross ($3F rows)=fire, small block ($1E)=move, none=select.
+- **HUD (checklist H)**: top status line = the unit the yellow cursor
+  (box) is on; bottom line = the unit the white cross (fire cursor) is
+  on, and in MOVE mode the bottom line's FL shows PROJECTED fuel to the
+  boxed square. (Our port shows projected fuel on the active line; a
+  possible refinement.)
+
+Still open (need the executable): exact tree fuel/move penalty
+magnitudes; what happens to a unit when its square (a bridge) is
+destroyed beneath it (manual silent; presumed destroyed, i.e. it falls
+into the water gap); whether firing consumes one of the per-turn moves;
+whether the turn auto-ends after the last allowed move.
+
+### Driving the original for measurement
+
+`C addr val` is the atari800 monitor's memory-write ("Changed N bytes").
+Poking a unit record ($5500 Black / $5600 Red, 16 bytes each, position
+byte at +1 = row*20+col) registers with the game's occupancy (it then
+rejects landing another unit there), so scenarios can be built by
+poking. Joystick on `-kbdjoy0`: KP8/2/4/6 = up/down/left/right (note:
+KP5 is keypad-CENTRE, not down -- `tools/atari_cursor_capture.py`'s
+`down: KP5` is a bug), RCTRL = trigger. The cursor board index is $00BC.
+Committing a scripted MOVE/FIRE (to measure the tree penalty etc.) still
+needs the move-mode box driven, which was not solved this session.

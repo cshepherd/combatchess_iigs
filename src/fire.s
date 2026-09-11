@@ -454,11 +454,13 @@ fr_event
 * Out: carry set = the unit was destroyed.
 * Clobbers A, X, Y, rt0-rt3, ev_*.
 *
-* UNVERIFIED (spec 23.1, 34): what happens to a unit whose
-* square is destroyed beneath it, a bridge in particular.
-* Here it stays where it is on the new terrain with terrain
-* HP 0, and terrain HP keeps counting down on any terrain
-* since the status line always shows it.
+* spec 23.1: when the square is destroyed beneath the unit, if
+* the new terrain cannot be stood on (a bridge felled to the
+* water gap), the unit falls with it and is destroyed; a tree
+* burnt to clear leaves standable ground and the unit lives on
+* it. Inferred (the manual is silent on the bridge case),
+* user-confirmed; the exact odds a stray fells the square are
+* the caller's business.
 *----------------------------------------------------------
 unit_take_hit
  MX %11
@@ -523,6 +525,16 @@ unit_take_hit
  sta ev_p2
  stz ev_p4
  jsr event_push
+* spec 23.1: if the square is felled to terrain the unit cannot
+* stand on (a bridge -> the water gap), the unit falls and is
+* destroyed; a tree -> clear leaves standable ground, so it
+* lives. Inferred (the manual is silent), user-confirmed.
+ ldx ev_p3                 ; the new terrain type
+ lda terrain_flags,x
+ and #TF_MOVE
+ bne :terrain_stands       ; still standable ground
+ ldx fr_victim
+ stz unit_hp,x             ; into the gap: destroyed by the check below
 :terrain_stands
 * the unit itself
  ldx fr_victim
@@ -566,12 +578,13 @@ unit_take_hit
 * Clobbers A, X, Y, rt0-rt7, ev_*.
 * Called after EV_SHOT_MISSED.
 *
-* UNVERIFIED (spec 12, 34): the manual says a miss may strike
-* ground or another unit but gives no scatter algorithm,
-* eligible squares, friendly-fire rule or terrain effect.
-* This carries the shot one square past the target and lets
-* it hit anything there; measure the Atari executable to
-* confirm.
+* VERIFIED 2026-09-11 (printed manual + play): a miss goes
+* astray and strikes a patch of ground or another unit, by an
+* axial one-tile perturbation, and both friendly units and
+* terrain are vulnerable to the stray. This carries the shot
+* one square off and lets it hit anything there. The exact
+* scatter distribution (per-square probabilities) is still
+* UNVERIFIED.
 *----------------------------------------------------------
 miss_resolve
  MX %11

@@ -30,7 +30,7 @@ from atari_status_capture import IMAGE, TITLE_DL, GAME_DL, dlist_addr, wait_for 
 REPO = os.path.abspath(os.path.join(TOOLS, ".."))
 OUT = os.path.join(REPO, "reference", "raw", "cursor")
 PM_BASE = 0x4000
-JOY = {"left": "KP4", "right": "KP6", "up": "KP8", "down": "KP5", "fire": "RCTRL"}
+JOY = {"left": "KP4", "right": "KP6", "up": "KP8", "down": "KP2", "fire": "RCTRL"}  # KP2=down (KP5 is keypad-centre)
 
 
 def shapes(pm):
