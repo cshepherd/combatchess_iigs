@@ -22,6 +22,7 @@ Usage:
                                [--wavdir DIR]
 """
 import argparse
+import math
 import os
 import wave
 
@@ -396,13 +397,29 @@ def main():
     # Two short pure tones from the log: the ~329 Hz clock tick (AUDF $60)
     # heard once a second, and the ~2458 Hz cursor-move beep (AUDF $0c).
     # Rendered synthetically (they are trivial tones) into 256-byte samples.
-    for sym, audf, audc, dur in (
-            ("snd_tick_wave", 0x60, 0xAF, 0.017),
-            ("snd_beep_wave", 0x0C, 0xAF, 0.017)):
+    # Three more, the piece-placement beeps that sound as each unit is set
+    # on the board at game start: one short pure tone per class, pitched
+    # by class (cruiser low, car high, an octave apart) exactly as the
+    # Atari does. AUDF $f3/$79/$3c = 131/262/524 Hz. They keep the sharp
+    # attack the original has (that percussive onset is most of what makes
+    # the low, few-cycle tones audible) but fade OUT to zero (fade=True) so
+    # the DOC oscillator does not step from the last sample value back to
+    # silence, which would click.
+    for sym, audf, audc, dur, fade in (
+            ("snd_tick_wave", 0x60, 0xAF, 0.017, False),
+            ("snd_beep_wave", 0x0C, 0xAF, 0.017, False),
+            ("snd_place_cru_wave",  0xF3, 0xAF, 0.017, True),
+            ("snd_place_tank_wave", 0x79, 0xAF, 0.017, True),
+            ("snd_place_car_wave",  0x3C, 0xAF, 0.017, True)):
         code = 0
         nbytes = 256 << code
-        buf = render_tone(audf, audc, dur)
-        u8 = to_u8(downsample(buf, nbytes))
+        buf = downsample(render_tone(audf, audc, dur), nbytes)
+        if fade:
+            k = 48                        # ~3 ms raised-cosine fade-out only
+            for i in range(k):
+                w = 0.5 - 0.5 * math.cos(math.pi * (i + 1) / (k + 1))
+                buf[-1 - i] *= w
+        u8 = to_u8(buf)
         read_rate = nbytes / dur
         freq = max(1, min(0x1ff, round(read_rate / DOC_K)))
         print(f"{sym}: {dur*1000:.0f} ms tone -> [{nbytes}] "

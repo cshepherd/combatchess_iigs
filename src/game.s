@@ -43,6 +43,7 @@
   jsr dbg_init
   jsr snd_load
   jsr snd_init
+  jsr place_animation       ; set the pieces down one by one, with beeps
   jsr dbg_run
 
   sec

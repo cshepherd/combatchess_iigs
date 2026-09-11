@@ -104,6 +104,8 @@ art_draw_cell
  lda occupant,x
  and #$00FF
  beq :terrain
+ ldy units_hidden          ; game-start reveal draws bare terrain first
+ bne :terrain
  dec                       ; unit id
  tax
  lda unit_class,x
@@ -230,6 +232,7 @@ side_glyph_reg dfb 3,0
 * 2), purple, black.
 terr_default_code dfb $00,$88,$68,$C6,$28,$00,$68,$8D,$68,$28
 
+units_hidden ds 2            ; nonzero: art_draw_cell draws terrain only
 look_ptr     ds 2
 cell         ds 2
 glyph        ds 2

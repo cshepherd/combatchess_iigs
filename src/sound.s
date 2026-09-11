@@ -32,6 +32,7 @@ SFX_UI      = 3
 SFX_TICK    = 4            ; play-clock tick, once a second
 SFX_BEEP    = 5            ; cursor-move click
 SFX_TURN    = 6            ; turn-start fanfare (rising two-voice sweep)
+SFX_PLACE   = 7            ; piece-placement beep, pitched per class by snd_place
 
 * One logical generator each so effects can sound together.
 GEN_MOVE    = 1
@@ -41,6 +42,10 @@ GEN_UI      = 4
 GEN_TICK    = 5
 GEN_BEEP    = 6
 GEN_TURN    = 7
+* Placement reuses the cursor beep's generator: the two never sound at the
+* same time (placement runs only at game start), and adding an eighth
+* generator disturbed the DOC oscillator setup in KEGS.
+GEN_PLACE   = GEN_BEEP
 
 *----------------------------------------------------------
 * snd_load - point the parameter blocks at the ripped samples
@@ -196,7 +201,7 @@ snd_tick
  plx
 :next
  inx
- cpx #7
+ cpx #8
  bne :t
  rep #$30
  MX %00
@@ -309,6 +314,37 @@ snd_stop
  rts
 
 *----------------------------------------------------------
+* snd_place - the piece-placement beep for class A (0 cruiser,
+* 1 tank, 2 car), pitched by class. Points the shared
+* placement block at that class's sample, then plays it as
+* SFX_PLACE. A no-op when the samples never loaded. Native
+* 16-bit. Clobbers A, X, Y.
+*----------------------------------------------------------
+snd_place
+ MX %00
+ and #$00FF
+ pha
+ lda snd_loaded
+ and #$00FF
+ bne :ok
+ pla
+ rts
+:ok
+ pla
+ asl                       ; class*2 into place_off_tab
+ tax
+ lda place_off_tab,x
+ clc
+ adc snd_blk
+ sta snd_pb_place          ; wave_start low word
+ lda snd_blk+2
+ sta snd_pb_place+2        ; wave_start bank
+ lda #SFX_PLACE
+ jmp snd_play
+
+place_off_tab dw snd_place_cru_wave_off,snd_place_tank_wave_off,snd_place_car_wave_off
+
+*----------------------------------------------------------
 * Free-form-synth parameter blocks (18 bytes each): wave
 * start (long), wave size (word), frequency (word), DOC RAM
 * address (word, page in the high byte), DOC buffer size code
@@ -382,15 +418,24 @@ snd_pb_turn
  dw snd_turn_wave_code
  adrl 0
  dw $00FF
+snd_pb_place
+ adrl 0                     ; wave_start, patched per beep by snd_place
+ dw snd_place_cru_wave_size ; the three placement waves share size/freq/code
+ dw snd_place_cru_wave_freq
+ dw $A800                  ; DOC $A800, the cursor beep's region (reused; only
+ dw snd_place_cru_wave_code ; ever one at a time, placement being at game start)
+ adrl 0
+ dw $00C0
 
 snd_pb_tab  da snd_pb_move,snd_pb_cannon,snd_pb_explode,snd_pb_ui
-            da snd_pb_tick,snd_pb_beep,snd_pb_turn
-snd_gen_tab dw GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI,GEN_TICK,GEN_BEEP,GEN_TURN
-snd_gen8    dfb GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI,GEN_TICK,GEN_BEEP,GEN_TURN
+            da snd_pb_tick,snd_pb_beep,snd_pb_turn,snd_pb_place
+snd_gen_tab dw GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI,GEN_TICK,GEN_BEEP,GEN_TURN,GEN_PLACE
+snd_gen8    dfb GEN_MOVE,GEN_CANNON,GEN_EXPLODE,GEN_UI,GEN_TICK,GEN_BEEP,GEN_TURN,GEN_PLACE
 * frames each effect plays before snd_tick stops it (its own
 * duration; UI a short fixed buzz). All < 256.
 snd_frames  dfb snd_move_wave_frames,snd_fire_wave_frames,snd_explode_wave_frames,10
             dfb snd_tick_wave_frames,snd_beep_wave_frames,snd_turn_wave_frames
+            dfb snd_place_cru_wave_frames
 
 SND_BUZZ_LEN  = 512
 
@@ -400,6 +445,6 @@ snd_fx    ds 2
 snd_now   ds 2
 snd_last_tick ds 2
 snd_delta ds 2
-snd_cd    ds 7             ; one countdown byte per effect (ticks remaining)
-snd_loopf ds 7             ; per-effect: nonzero = re-trigger on expiry (trill)
+snd_cd    ds 8             ; one countdown byte per effect (ticks remaining)
+snd_loopf ds 8             ; per-effect: nonzero = re-trigger on expiry (trill)
 snd_buzz  ds SND_BUZZ_LEN+1

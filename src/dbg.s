@@ -191,6 +191,115 @@ turn_check
 :same
  rts
 
+*----------------------------------------------------------
+* place_animation - the Atari's game-start ceremony: draw the
+* board bare, then set each piece down one at a time with a
+* short beep pitched by its class (cruiser low, tank mid, car
+* high), Black's whole army first then Red's, in roster order
+* (cruiser, tanks, cars), one piece every ~183 ms. Runs once,
+* before the first turn; the loop's draw_all then adds the HUD
+* and the turn fanfare. Native 16-bit.
+*----------------------------------------------------------
+PLACE_TONE  = 2              ; >= 2 ticks so the 60 Hz clock cannot truncate
+PLACE_GAP   = 9              ; the 17 ms beep; 2 + 9 = 11/60 s ~ 183 ms/piece
+place_animation
+ MX %00
+ lda #1
+ sta units_hidden
+ jsr art_draw_board          ; bare terrain; pieces revealed one by one
+ ldx #0
+:pair
+ stx pl_idx
+ lda place_seq,x
+ and #$00FF
+ sta pl_side
+ lda place_seq+1,x
+ and #$00FF
+ sta pl_class
+ ldy #0
+:scan
+ sty pl_id
+ tya
+ tax
+ lda unit_flags,x
+ and #$0080                  ; UF_ALIVE
+ beq :nextid
+ lda unit_side,x
+ and #$00FF
+ cmp pl_side
+ bne :nextid
+ lda unit_class,x
+ and #$00FF
+ cmp pl_class
+ bne :nextid
+* set this piece down: draw its cell with the unit shown, beep, pause
+ lda unit_x,x
+ and #$00FF
+ sta cx
+ lda unit_y,x
+ and #$00FF
+ sta cy
+ stz units_hidden
+ jsr art_draw_cell
+ lda #1
+ sta units_hidden
+ lda pl_class
+ jsr snd_place
+* let the beep play its whole sample (>= PLACE_TONE ticks so the
+* coarse 60 Hz clock cannot cut the 17 ms tone down to a click),
+* then stop it cleanly and hold silent for the rest of the step.
+* Paced off _GetTick because wait_vbl's $C019 poll hangs before
+* the game loop is running.
+ jsr snd_gettick
+ clc
+ adc #PLACE_TONE
+ sta pl_deadline
+:tone
+ jsr snd_gettick
+ sec
+ sbc pl_deadline
+ bmi :tone
+ lda #SFX_PLACE
+ jsr snd_stop
+ jsr snd_gettick
+ clc
+ adc #PLACE_GAP
+ sta pl_deadline
+:gap
+ jsr snd_gettick
+ sec
+ sbc pl_deadline
+ bmi :gap
+:nextid
+ ldy pl_id
+ iny
+ cpy #MAX_UNITS
+ bcs :pairnext
+ jmp :scan
+:pairnext
+ ldx pl_idx
+ inx
+ inx
+ cpx #12                     ; 6 (side, class) pairs x 2 bytes
+ bcs :fin
+ jmp :pair
+:fin
+ stz units_hidden
+ rts
+
+place_seq
+ dfb SIDE_BLACK,CLASS_CRUISER
+ dfb SIDE_BLACK,CLASS_TANK
+ dfb SIDE_BLACK,CLASS_CAR
+ dfb SIDE_RED,CLASS_CRUISER
+ dfb SIDE_RED,CLASS_TANK
+ dfb SIDE_RED,CLASS_CAR
+pl_side ds 2
+pl_class ds 2
+pl_id   ds 2
+pl_idx  ds 2
+pl_deadline ds 2
+
 * note_game_over - The first time game_result is set, show
 * the result and mark the display dirty.
 note_game_over
