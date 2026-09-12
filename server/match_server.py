@@ -438,9 +438,14 @@ class Server:
 
     async def _spawn_bot(self):
         # import lazily so the server runs even without the bot module. CC_BOT
-        # selects the opponent (default random); "greedy" pairs the greedy bot.
+        # selects the opponent (default random): "greedy" pairs the greedy bot,
+        # "chooser" the stronger search bot (spec 29.1).
         host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host
-        if os.environ.get("CC_BOT", "random").lower().startswith("greedy"):
+        pick = os.environ.get("CC_BOT", "random").lower()
+        if pick.startswith("chooser"):
+            from bots import chooser_bot
+            asyncio.create_task(chooser_bot.run(host, self.port, name="Chooser"))
+        elif pick.startswith("greedy"):
             from bots import greedy_bot
             asyncio.create_task(greedy_bot.run(host, self.port, name="GreedyBot"))
         else:

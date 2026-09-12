@@ -57,7 +57,7 @@ python3 server/match_server.py          # listens on 0.0.0.0:1984
 
 Pressing N asks for a bot match, and the server spawns an opponent bot that connects back as an ordinary client. Environment variables tune it:
 
-- `CC_BOT=greedy` uses the greedy bot (`bots/greedy_bot.py`, the network twin of `src/aiplayer.s`); the default is the random bot (`bots/random_bot.py`).
+- `CC_BOT=greedy` uses the greedy bot (`bots/greedy_bot.py`, the network twin of `src/aiplayer.s`), `CC_BOT=chooser` the stronger search bot (`bots/chooser_bot.py`, spec 29.1: it looks a ply ahead and beats greedy roughly two to one); the default is the random bot (`bots/random_bot.py`).
 - `CC_BOARD=<1..10>` picks the board (default 1; the armies engage on the more open boards 6–8).
 - `CC_GRACE=<seconds>` is the reconnect grace window (default 120): how long a match survives a dropped human before the opponent wins by abandonment.
 
@@ -66,9 +66,10 @@ Under **MAME on macOS** the Uthernet II is bridged to the host through Apple's v
 To exercise the server and rules without an IIGS at all:
 
 ```bash
-python3 server/soak.py --games 20 --red greedy --black random   # bot vs bot
+python3 server/soak.py --games 20 --red chooser --black greedy  # bot vs bot
 python3 server/test_slice.py        # connect -> match -> one human move -> bot reply
 python3 server/test_reconnect.py    # token reconnect, bad token, grace/abandonment
+python3 server/test_chooser.py      # the search bot beats the greedy bot head-to-head
 python3 tools/gen_fixtures.py --check   # golden frames still match protocol.py
 ```
 
@@ -104,7 +105,7 @@ python3 tools/gen_fixtures.py --check   # golden frames still match protocol.py
 | `src/common.s` | Routines shared by every part (toolbox start-up, SHR init, text, keys) |
 | `res/` | `PRODOS` system file |
 | `server/` | Python match server: authoritative `state.py`/`rules.py`, `protocol.py`, `soak.py`, tests, and the golden `fixtures/` |
-| `bots/` | Random and greedy network bots — ordinary TCP clients of the match server |
+| `bots/` | Random, greedy, and chooser (search) network bots — ordinary TCP clients of the match server |
 | `tools/` | Build and KEGS debugging tools |
 | `tools/mame/` | MAME + Uthernet II network harness: `run-mame.sh`, the claudebridge Lua bridge, and `mame-lua` |
 | `assets/` | SHR art and audio (empty until milestone 4) |

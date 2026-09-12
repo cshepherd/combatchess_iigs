@@ -24,10 +24,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import match_server as MS
 import rules as R
-from bots import greedy_bot, random_bot
+from bots import greedy_bot, random_bot, chooser_bot
 
-BOTS = {"greedy": greedy_bot.run, "random": random_bot.run}
-REASON = {0: "cruiser", 1: "surrender", 2: "stalemate"}
+BOTS = {"greedy": greedy_bot.run, "random": random_bot.run,
+        "chooser": chooser_bot.run}
+REASON = {0: "cruiser", 1: "surrender", 2: "stalemate", 3: "time"}
 
 
 def _parse_boards(spec):
@@ -46,6 +47,9 @@ def _make_run(kind, port, name, seed, pass_prob, max_actions):
         return lambda: random_bot.run(host="127.0.0.1", port=port, name=name,
                                       max_actions=max_actions, seed=seed,
                                       pass_prob=pass_prob)
+    if kind == "chooser":
+        return lambda: chooser_bot.run(host="127.0.0.1", port=port, name=name,
+                                       max_actions=max_actions)
     return lambda: greedy_bot.run(host="127.0.0.1", port=port, name=name,
                                   max_actions=max_actions)
 
