@@ -38,9 +38,10 @@
   MX %11
   lda net_mode              ; network game? connect instead of local setup
   beq :local
-  jsr net_game_start        ; DHCP, connect, match; applies the snapshot
-  bcc :haveboard            ; a match is live (cfg_board set from it)
-  stz net_mode              ; connection failed: fall back to a local game
+  sei                       ; mask IRQs from here through snd_init: the connect
+  jsr net_game_start        ; blocks for seconds before the game's sound handler
+  bcc :haveboard            ; is up, and a stray DOC interrupt left by the title
+  stz net_mode              ; music would otherwise crash the firmware
 :local
   jsr setup_game            ; the board first: dbg_init reads it
 :haveboard
@@ -50,6 +51,7 @@
   jsr dbg_init
   jsr snd_load
   jsr snd_init
+  cli                       ; sound handler up: safe to take interrupts again
   sep #$20
   MX %10
   lda net_mode              ; local play sets the pieces down with beeps;

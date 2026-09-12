@@ -17,6 +17,8 @@
 * cfg_board from the match so dbg_init picks the right palette. Returns
 * carry clear on success (a match is live), carry set on any failure.
 * Clobbers A/X/Y and the net scratch.
+            mx    %11
+
 net_game_start
             stz   nl_over
             stz   nl_action+0
@@ -254,7 +256,7 @@ net_pump
             sta   NRXP
             lda   #>nl_rxbuf
             sta   NRXP+1
-            lda   #250
+            lda   #60
             sta   net_len+0
             stz   net_len+1
             jsr   net_recv
@@ -285,4 +287,4 @@ nl_action    dfb   0,0
 nl_to        dfb   0,0
 nl_ecount    dfb   0
 nl_off       dfb   0
-nl_rxbuf     ds    512
+nl_rxbuf     =     $0E80              ; recv chunk in free bank-0 RAM ($0E80-$0EFF)

@@ -62,6 +62,8 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   beq :game
   cmp #'O'
   beq :options
+  cmp #'N'
+  beq :netgame
  do INCLUDE_TESTS
   cmp #'T'
   beq :tests
@@ -70,7 +72,13 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
 :options
   jsr options_page
   bra :show
+:netgame
+  lda #1                    ; request a network game; GAME connects to the server
+  sta net_mode
+  bra :launch
 :game
+  stz net_mode              ; a local hot-seat game
+:launch
   jsr ntp_stop              ; hand the DOC back to the Sound Tool
   sec
   xce
@@ -212,6 +220,11 @@ draw_title
  jsr draw_line
  do INCLUDE_TESTS
  lda #seg_push3
+ ldx #$FFFF
+ ldy #182
+ jsr draw_line
+ else
+ lda #seg_push_net
  ldx #$FFFF
  ldy #182
  jsr draw_line
@@ -810,6 +823,14 @@ seg_push3
  da s_push3b
  dfb $80+STYLE_NORMAL
  da 0
+seg_push_net
+ da s_push
+ dfb $80+STYLE_NORMAL
+ da s_key_n
+ dfb $80+STYLE_INVERSE
+ da s_net_b
+ dfb $80+STYLE_NORMAL
+ da 0
 seg_by
  da s_by
  dfb $80+STYLE_NORMAL
@@ -918,6 +939,10 @@ s_push2b
              fin
              dfb 0
 s_push3b     asc ' FOR THE RULES SELF-TESTS.'
+             dfb 0
+s_key_n      asc 'N'
+             dfb 0
+s_net_b      asc ' FOR A NETWORK GAME.'
              dfb 0
 s_by         asc 'GAME BY LOU MATTSFIELD'
              dfb 0

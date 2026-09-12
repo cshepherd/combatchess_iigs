@@ -14,6 +14,8 @@
 * netstate_apply: copy ns_terrain -> board, rebuild the occupant map, and
 * fill the unit arrays from ns_units (slot = id). Dead units keep their
 * slot data but are not placed on the board. Clobbers A/X/Y and np scratch.
+            mx    %11
+
 netstate_apply
             ldy   #0                       ; terrain: ns_terrain -> board (220)
 :tc         lda   ns_terrain,y

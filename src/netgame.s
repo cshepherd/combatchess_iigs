@@ -13,6 +13,8 @@
 *----------------------------------------------------------
 
 * Message type IDs (protocol.py section 9).
+            mx    %11
+
 NET_C_HELLO       = $01
 NET_S_WELCOME     = $02
 NET_C_QUEUE_JOIN  = $03

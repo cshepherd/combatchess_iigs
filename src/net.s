@@ -30,6 +30,8 @@
 *----------------------------------------------------------
 
 * --- W5100 common + socket-0 register addresses (16-bit) ---
+            mx    %11
+
 W5_MR       = $0000            ; mode register (via the MR I/O byte, not indirect)
 W5_GAR      = $0001            ; gateway address (4)
 W5_SUBR     = $0005            ; subnet mask (4)

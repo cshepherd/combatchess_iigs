@@ -13,6 +13,8 @@
 * Frame header (8 bytes): 'C' 'C' version type len(u16) seq(u16).
 *----------------------------------------------------------
 
+            mx    %11
+
 PROTO_MAGIC0  = $43           ; 'C'
 PROTO_MAGIC1  = $43           ; 'C'
 PROTO_VERSION = 1
@@ -361,6 +363,11 @@ proto_need     dfb 0,0                ;   full frame size (hdr+len)
 proto_err      dfb 0                  ; nonzero after a protocol error
 
 proto_rx_len dfb   0,0                ; bytes currently staged
-proto_rx     ds    PROTO_RXCAP        ; RX staging buffer
-proto_tx     ds    PROTO_HDR+PROTO_MAXPAY   ; TX frame build buffer
-proto_payload ds   PROTO_MAXPAY       ; last parsed payload
+* The big buffers live in free bank-0 RAM OUTSIDE the part so GAME (which
+* also carries the whole engine) fits its $2000-$BEFF window: $0C00-$0FFF
+* is the launcher's ProDOS I/O buffer, free once GAME runs, and $1214-$1BFF
+* is the gap between the heartbeat record and the sound direct page. They
+* are bank 0, so the direct-page pointers still reach them.
+proto_rx     =     $0C00              ; RX staging (640 bytes, $0C00-$0E7F)
+proto_payload =    $1214              ; last parsed payload (768, $1214-$1513)
+proto_tx     ds    PROTO_HDR+256      ; TX build buffer (we only send small frames)

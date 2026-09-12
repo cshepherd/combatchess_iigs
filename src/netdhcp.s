@@ -19,6 +19,8 @@
 * Runs in emulation or native mode, 8-bit A/X/Y, DBR $00.
 *----------------------------------------------------------
 
+            mx    %11
+
 DHCP_RETRIES = 6                   ; DISCOVER and REQUEST attempts
 DHCP_POLLS   = $30                 ; RX poll iterations before a retry
 
