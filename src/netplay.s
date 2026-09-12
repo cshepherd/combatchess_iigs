@@ -100,30 +100,30 @@ netstate_apply
 * logic read the server's truth (the server owns time, spec 22)
             lda   ns_active
             sta   active_side
-            ldx   #3                        ; side_time RED = ns_red_ms >> 4 (ms -> ticks)
+            lda   ns_moves                  ; HUD reads the server's move count
+            sta   moves_used
+            ldx   #3                        ; side_time RED = ns_red_ms * 3/50 (ms -> ticks)
 :crt        lda   ns_red_ms,x
-            sta   side_time,x
+            sta   np_ms,x
             dex
             bpl   :crt
-            ldx   #4
-:crs        lsr   side_time+3
-            ror   side_time+2
-            ror   side_time+1
-            ror   side_time+0
+            jsr   np_ms_to_ticks
+            ldx   #3
+:crs        lda   np_ms,x
+            sta   side_time,x
             dex
-            bne   :crs
-            ldx   #3                        ; side_time BLACK = ns_black_ms >> 4
+            bpl   :crs
+            ldx   #3                        ; side_time BLACK = ns_black_ms * 3/50
 :cbt        lda   ns_black_ms,x
-            sta   side_time+4,x
+            sta   np_ms,x
             dex
             bpl   :cbt
-            ldx   #4
-:cbs        lsr   side_time+7
-            ror   side_time+6
-            ror   side_time+5
-            ror   side_time+4
+            jsr   np_ms_to_ticks
+            ldx   #3
+:cbs        lda   np_ms,x
+            sta   side_time+4,x
             dex
-            bne   :cbs
+            bpl   :cbs
             jsr   get_tick                   ; turn_start_tick = now, so the active
             ldx   #3                        ; side's clock shows the stored ticks
 :ctt        lda   now_tick,x                 ; (not floored by a stale elapsed)
@@ -132,7 +132,47 @@ netstate_apply
             bpl   :ctt
             rts
 
+* np_ms_to_ticks: np_ms (4-byte LE) := np_ms * 3 / 50, the exact ms->tick
+* conversion (60 Hz / 1000 = 3/50) that replaces the old >>4 (which ran
+* the clocks ~4% fast). Enters 8-bit native, does the 32-bit multiply and
+* long division in 16-bit, returns 8-bit. Clobbers A/X, np_tmp, np_rem.
+np_ms_to_ticks
+            rep   #$30
+            mx    %00
+            lda   np_ms+0                  ; np_tmp = np_ms  (keep the x1 value)
+            sta   np_tmp+0
+            lda   np_ms+2
+            sta   np_tmp+2
+            asl   np_ms+0                  ; np_ms *= 2
+            rol   np_ms+2
+            clc                             ; np_ms = np_ms*2 + np_ms = *3
+            lda   np_ms+0
+            adc   np_tmp+0
+            sta   np_ms+0
+            lda   np_ms+2
+            adc   np_tmp+2
+            sta   np_ms+2
+            stz   np_rem                    ; divide the 32-bit np_ms by 50
+            ldx   #32
+:dl         asl   np_ms+0                  ; {np_rem:np_ms} <<= 1
+            rol   np_ms+2
+            rol   np_rem
+            lda   np_rem
+            cmp   #50
+            bcc   :ds
+            sbc   #50                       ; carry set by cmp -> subtract
+            sta   np_rem
+            inc   np_ms+0                   ; quotient bit into the vacated bit 0
+:ds         dex
+            bne   :dl
+            sep   #$30
+            mx    %11
+            rts
+
 np_i         dfb   0
 np_x         dfb   0
 np_y         dfb   0
 np_t         dfb   0
+np_ms        dfb   0,0,0,0
+np_tmp       dfb   0,0,0,0
+np_rem       dfb   0,0

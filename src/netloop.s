@@ -117,6 +117,8 @@ net_game_start
             sta   nl_my_side
             lda   proto_payload+5            ; board number -> cfg_board
             sta   cfg_board
+            lda   proto_payload+6            ; moves/turn -> opt_moves_per_turn
+            sta   opt_moves_per_turn         ; (setup_game is skipped in net mode)
 * decode + apply the embedded snapshot (skip the 37-byte prefix)
             clc
             lda   #<proto_payload
