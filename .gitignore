@@ -45,3 +45,4 @@ src/proto_test
 src/netgame_test
 src/nettest_client
 src/netplay_test
+src/netloop_test

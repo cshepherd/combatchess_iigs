@@ -36,8 +36,9 @@ netstate_apply
             stz   np_i
 :ul         lda   np_i
             cmp   ns_ucount
-            bcs   :udone
-            jsr   net_unit_ptr               ; NDP -> this unit's 11-byte record
+            bcc   :cont
+            jmp   :udone
+:cont       jsr   net_unit_ptr               ; NDP -> this unit's 11-byte record
             ldy   #0
             lda   (NDP),y                     ; +0 id -> engine slot
             tax
@@ -91,7 +92,7 @@ netstate_apply
             adc   #1                            ; occupant stores id+1
             sta   occupant,y
 :nextu      inc   np_i
-            bra   :ul
+            jmp   :ul
 :udone      rts
 
 np_i         dfb   0

@@ -30,7 +30,7 @@ BINS  = $(addprefix out/,$(PARTS))
 
 # Sources included with PUT by more than one part. Listed as
 # prerequisites so editing them rebuilds every part.
-SHARED = src/shared.s src/common.s src/tables.s src/board.s src/line.s src/units.s src/events.s src/move.s src/rng.s src/fire.s src/turn.s src/aiplayer.s src/dbg.s src/boards.s
+SHARED = src/shared.s src/common.s src/tables.s src/board.s src/line.s src/units.s src/events.s src/move.s src/rng.s src/fire.s src/turn.s src/aiplayer.s src/dbg.s src/boards.s src/net.s src/netdhcp.s src/proto.s src/netgame.s src/netplay.s src/netloop.s
 
 # The ten boards, generated from the reference maps captured from the
 # Atari original (tools/atari_boards_decode.py writes them).

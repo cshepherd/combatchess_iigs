@@ -54,6 +54,10 @@ inject_key      = $1110  ; word
 snd_blk         = $1120  ; long: base address of the loaded sample bank
 snd_loaded      = $1124  ; byte: nonzero once cc.s load_res has run (once/boot)
 
+* Network play (spec N4). Nonzero selects a network game: GAME
+* connects to the match server instead of running a local hot-seat.
+net_mode        = $1130  ; byte: 0 local, nonzero network game
+
 * Heartbeat task record (see toolbox_init): 20 bytes the
 * firmware keeps a pointer to for the whole session, so it
 * sits outside every part, above the globals page.

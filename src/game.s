@@ -36,14 +36,32 @@
 
   sep $30
   MX %11
+  lda net_mode              ; network game? connect instead of local setup
+  beq :local
+  jsr net_game_start        ; DHCP, connect, match; applies the snapshot
+  bcc :haveboard            ; a match is live (cfg_board set from it)
+  stz net_mode              ; connection failed: fall back to a local game
+:local
   jsr setup_game            ; the board first: dbg_init reads it
+:haveboard
 
   rep $30
   MX %00
   jsr dbg_init
   jsr snd_load
   jsr snd_init
-  jsr place_animation       ; set the pieces down one by one, with beeps
+  sep #$20
+  MX %10
+  lda net_mode              ; local play sets the pieces down with beeps;
+  bne :skipanim             ; a network board is the server's, already placed
+  rep #$20
+  MX %00
+  jsr place_animation
+  bra :runit
+:skipanim
+  rep #$20
+  MX %00
+:runit
   jsr dbg_run
 
   sec
@@ -192,5 +210,12 @@ setup_game
   put board_art
   put sound_samples
   put sound
+
+  put net
+  put netdhcp
+  put proto
+  put netgame
+  put netplay
+  put netloop
 
   put common

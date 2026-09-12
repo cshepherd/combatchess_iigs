@@ -129,6 +129,7 @@ dbg_init
 dbg_run
  MX %00
 :loop
+ jsr net_poll_maybe        ; in a network game: apply the server's snapshots
  jsr anim_check            ; slide a unit that just moved, before its square is drawn
  jsr shot_check            ; fly a shot that was just fired, then explode on a hit
  jsr turn_check            ; a fanfare when the side to move changes
@@ -163,6 +164,85 @@ dbg_run
  rep #$20
  MX %00
  bra :loop
+
+*----------------------------------------------------------
+* Network glue. net_poll_maybe pumps the server each frame and
+* marks the board dirty when a new snapshot arrived; the eng_net_*
+* wrappers cross into the 8-bit net stack like the eng_* engine
+* wrappers do. All entered in native 16-bit.
+*----------------------------------------------------------
+net_poll_maybe
+ MX %00
+ sep #$30
+ MX %11
+ lda net_mode
+ beq :out
+ jsr net_poll_step
+ lda nl_dirty
+ beq :out
+ rep #$30
+ MX %00
+ lda #1
+ sta dirty
+ rts
+:out
+ rep #$30
+ MX %00
+ rts
+
+* is_net_mode - carry set if this is a network game.
+is_net_mode
+ MX %00
+ sep #$20
+ MX %10
+ lda net_mode
+ rep #$20
+ MX %00
+ and #$00FF
+ beq :no
+ sec
+ rts
+:no
+ clc
+ rts
+
+* eng_net_send_move - send C_MOVE(sel_unit -> cur_x,cur_y).
+eng_net_send_move
+ MX %00
+ sep #$30
+ MX %11
+ lda sel_unit
+ ldx cur_x
+ ldy cur_y
+ jsr net_send_move
+ rep #$30
+ MX %00
+ rts
+
+* eng_net_send_fire - fire sel_unit at the unit under the cursor.
+* Carry set if a target unit was there and the shot was sent.
+eng_net_send_fire
+ MX %00
+ ldx cur_x
+ ldy cur_y
+ jsr eng_get_unit_at        ; A = target unit id, carry set if present
+ bcc :notarget
+ and #$00FF
+ sta net_tgt
+ sep #$30
+ MX %11
+ lda sel_unit
+ ldx net_tgt
+ jsr net_send_fire
+ rep #$30
+ MX %00
+ sec
+ rts
+:notarget
+ clc
+ rts
+
+net_tgt ds 2
 
 *----------------------------------------------------------
 * update_clock - Once a frame: let the engine notice a
@@ -580,6 +660,16 @@ do_select
 
 do_move
  MX %00
+ jsr is_net_mode           ; network game: send C_MOVE, let the server answer
+ bcc :local
+ jsr eng_net_send_move
+ lda #MODE_SELECT
+ sta mode
+ lda #$FF
+ sta sel_unit
+ lda #s_moved
+ jmp set_msg
+:local
  lda sel_unit
  ldx cur_x
  ldy cur_y
@@ -601,6 +691,16 @@ do_move
 
 do_fire
  MX %00
+ jsr is_net_mode           ; network game: send C_FIRE at the unit under the cursor
+ bcc :local
+ jsr eng_net_send_fire
+ bcs :sent
+ lda #s_no_unit_here       ; square shots are not networked in v1
+ jmp set_msg
+:sent
+ lda #s_moved
+ jmp set_msg
+:local
  lda sel_unit
  ldx cur_x
  ldy cur_y
