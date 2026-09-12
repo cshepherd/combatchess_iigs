@@ -29,10 +29,17 @@
   ORG $1000
   MX %11
 
+  put shared                ; equates only: INCLUDE_TESTS for the conditionals
+
 * Public jump table.
 br_title     bra load_title            ; $1000
 br_game      bra load_game             ; $1002
-br_test      bra load_test             ; $1004
+br_test
+ do INCLUDE_TESTS
+ bra load_test                          ; $1004
+ else
+ bra load_title                         ; $1004: tests excluded -> title
+ fin
 
 *----------------------------------------------------------
 * load_title - Boot OR reload-TITLE entry.
@@ -93,12 +100,14 @@ load_game
  lda #<game_path
  jmp load_and_run
 
+ do INCLUDE_TESTS
 load_test
  sec
  xce
  ldx #>test_path
  lda #<test_path
  jmp load_and_run
+ fin
 
 *----------------------------------------------------------
 * load_and_run - OPEN the file at <path>, READ it to $2000,
@@ -239,7 +248,9 @@ mli_errcode  dfb 0
 *----------------------------------------------------------
 title_path    str 'TITLE'
 game_path     str 'GAME'
+ do INCLUDE_TESTS
 test_path     str 'TEST'
+ fin
 snd_path      str 'SOUNDS'
 ntpplay_path  str 'NT'
 ntpmod_path   str 'TM'

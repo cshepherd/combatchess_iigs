@@ -18,8 +18,14 @@ IMGFILE = out/$(VOLNAME).po
 CADIUS = tools/cadius_strict.sh
 
 # Parts: each src/NAME.s assembles to out/NAME. ProDOS filenames
-# and file types are assigned in the package step.
-PARTS = cc title game test
+# and file types are assigned in the package step. The rules
+# self-tests (TEST) are built and added only when src/shared.s sets
+# INCLUDE_TESTS = 1 -- the same switch the source conditionals read.
+INCLUDE_TESTS := $(shell grep -E '^INCLUDE_TESTS *=' src/shared.s | grep -oE '[01]' | tail -1)
+PARTS = cc title game
+ifeq ($(INCLUDE_TESTS),1)
+PARTS += test
+endif
 BINS  = $(addprefix out/,$(PARTS))
 
 # Sources included with PUT by more than one part. Listed as
@@ -89,10 +95,12 @@ $(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp $(BINS)
 	cp res/title.ntp out/TM\#060000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TM\#060000 --quiet
 	rm out/TM\#060000
+ifeq ($(INCLUDE_TESTS),1)
 	# Rules self-tests: T on the title screen, or 00/1004g in KEGS.
 	cp out/test out/TEST\#FF2000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TEST\#FF2000 --quiet
 	rm out/TEST\#FF2000
+endif
 	$(CADIUS) CATALOG $(IMGFILE)
 
 clean:

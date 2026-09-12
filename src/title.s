@@ -62,8 +62,10 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   beq :game
   cmp #'O'
   beq :options
+ do INCLUDE_TESTS
   cmp #'T'
   beq :tests
+ fin
   bra :key
 :options
   jsr options_page
@@ -74,6 +76,7 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   xce
   MX %11
   jmp LAUNCH_GAME
+ do INCLUDE_TESTS
 :tests
   MX %00
   jsr ntp_stop
@@ -81,6 +84,7 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   xce
   MX %11
   jmp LAUNCH_TEST
+ fin
 
 *----------------------------------------------------------
 * ntp_start / ntp_stop - title music via NinjaTracker+.
@@ -206,10 +210,12 @@ draw_title
  ldx #$FFFF
  ldy #172
  jsr draw_line
+ do INCLUDE_TESTS
  lda #seg_push3
  ldx #$FFFF
  ldy #182
  jsr draw_line
+ fin
  lda #seg_by
  ldx #$FFFF
  ldy #196
@@ -890,7 +896,7 @@ s_avalon     asc 'AVALON HILL GAME COMPANY'
              dfb 0
 s_copy       asc 'ORIGINAL ATARI GAME COPYRIGHT 1984'
              dfb 0
-s_port       asc 'APPLE IIGS PORT'
+s_port       asc 'APPLE IIGS PORT 2026 [cCc]'
              dfb 0
 s_push       asc 'PUSH '
              dfb 0
@@ -904,7 +910,12 @@ s_key_t      asc 'T'
              dfb 0
 s_push1b     asc ' TO BEGIN GAME, OR'
              dfb 0
-s_push2b     asc ' TO VIEW AND CHANGE OPTIONS,'
+s_push2b
+             do INCLUDE_TESTS
+             asc ' TO VIEW AND CHANGE OPTIONS,'
+             else
+             asc ' TO VIEW AND CHANGE OPTIONS.'
+             fin
              dfb 0
 s_push3b     asc ' FOR THE RULES SELF-TESTS.'
              dfb 0

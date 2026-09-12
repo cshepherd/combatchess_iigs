@@ -4,6 +4,13 @@
 * included into more than one binary.
 *----------------------------------------------------------
 
+* Build flag: include the rules self-tests (TEST part, the T
+* option on the title). 0 = leave them out (default); 1 = build
+* and wire them in. The Makefile reads this same line to decide
+* whether to assemble TEST and add it to the disk image, so this
+* is the single switch -- flip it to 1 to bring the tests back.
+INCLUDE_TESTS = 0
+
 * Launcher jump table (src/cc.s). JMP here in emulation
 * mode with 8-bit M/X to chain to another part.
 LAUNCH_TITLE = $1000

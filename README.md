@@ -8,13 +8,13 @@ The rules specification lives in `combat_chess_iigs_spec-3.md`; the plan for har
 
 ## Status
 
-Current status: Playable Alpha. Some known audio glitches.
+Current status: Playable Alpha.
 
 Milestone 1 in progress. The disk boots into a launcher that chains a placeholder title screen and a placeholder game part. The headless rules engine is functionally complete for the printed rules: data tables, board and terrain, line tracing, units, movement, fire, turns with both Shoot Options, chess clocks with pause, and victory, time loss, surrender and stalemate, all with self-tests. Items the manual leaves open are marked UNVERIFIED in the source for milestone 2.
 
 The ten original boards and their starting positions have been captured from the Atari game (see `reference/notes/capture_session.md`) and generated into `src/boards.s`. The game part draws any of the ten boards with the original's character set and colours (milestone 4's terrain tiles and unit glyphs, generated from the captures by `tools/gen_board_art.py`) and plays with the milestone 3 keyboard cursor and HUD. The computer plays either or both sides (the options screen's COMPUTER field): a greedy player (`src/aiplayer.s`) that advances toward the enemy Battle Cruiser and fires by expected damage, winning by destroying it. A moving unit slides square by square from its old position to its new one, and a shot flies from the attacker to its target (larger for a heavier unit) and bursts into an explosion on a hit. Arrows or WASD move the cursor, RETURN selects a friendly unit and then confirms a move or a shot (at an enemy, or at a tree, bridge or grey square to destroy it), M and F switch between move and fire (legal destinations and targets are highlighted), ESC cancels, TAB shows the army status screens (the original's SELECT: the side to move, then the opponent, then the board again; ESC also returns), E ends the turn, P pauses, X surrenders, the number keys restart on another board (0 is board 10), Q quits to the title.
 
-The title screen carries the Atari original's tank plaque as a bitmap over QuickDraw text. RETURN begins the game, O opens the options page (the original's seven options with its exact ranges and defaults: O or down arrow moves between fields, S or right arrow steps a value, RETURN returns), and T runs the rules self-tests.
+The title screen carries the Atari original's tank plaque as a bitmap over QuickDraw text. RETURN begins the game and O opens the options page (the original's seven options with its exact ranges and defaults: O or down arrow moves between fields, S or right arrow steps a value, RETURN returns). The rules self-tests are an opt-in build (see [Building](#building)); when they are compiled in, a third title line appears and T runs them.
 
 ## Building
 
@@ -29,11 +29,13 @@ make package   # assemble everything and build out/combatchess.po
 make clean     # remove out/ and the merlin32 listings
 ```
 
+The rules self-tests (`src/test.s`) are excluded from the build by default. To include them, set `INCLUDE_TESTS = 1` in `src/shared.s` and rebuild: that one switch assembles the `TEST` part, adds it to the disk image, and turns on the T option on the title screen (both the source conditionals and the Makefile read that line).
+
 The build assembles each part in `src/` with `merlin32 -V` (which also writes a `*_Output.txt` listing beside the source), creates an 800 KB ProDOS volume, and copies PRODOS plus the parts onto it through `tools/cadius_strict.sh`, a wrapper that fails the build when cadius reports an error instead of exiting zero.
 
 ## Running
 
-Boot `out/combatchess.po` in KEGS, GSplus, or on real hardware. The volume contains only one `.SYSTEM` file, so ProDOS runs the launcher directly.
+Boot `out/combatchess.po` in KEGS, GSplus, or on real hardware. The volume contains only one `.SYSTEM` file, so ProDOS runs the launcher directly. A prebuilt image is committed at `out/combatchess.po` as a release artifact, so you can boot it without building (it is refreshed alongside notable changes).
 
 `tools/kegs_run.sh` boots the image in the patched KEGS described in `tools/KEGS_DEBUGGER.md`. Add `-dbgport 6520` to open the debug socket, then `tools/kegs_screenshot.py` dumps the screen and registers.
 
@@ -44,7 +46,7 @@ Boot `out/combatchess.po` in KEGS, GSplus, or on real hardware. The volume conta
 | `src/cc.s` | `CC.SYSTEM` launcher: relocates to $1000, chains TITLE and GAME |
 | `src/title.s` | Title screen and options page; `src/title_art.s` is the generated plaque bitmap |
 | `src/game.s` | Game part: rules engine and board display go here |
-| `src/test.s` | Rules self-tests part (spec section 33) |
+| `src/test.s` | Rules self-tests part (spec section 33); built only when `INCLUDE_TESTS = 1` in `src/shared.s` |
 | `src/tables.s` | Rules data: unit class, fuel cost and hit probability tables with their lookups |
 | `src/board.s` | Board geometry, directions, 220-cell terrain board and occupant map, terrain flag tables, destruction |
 | `src/line.s` | Line classification and tracing shared by movement paths and line of sight |

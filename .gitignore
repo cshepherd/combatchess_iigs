@@ -1,5 +1,8 @@
-# Build output (disk image, assembled parts, staged #TTAAAA copies)
-out/
+# Build output (assembled parts, staged #TTAAAA copies). Ignore the
+# contents of out/ but NOT the directory itself, so the exception below
+# can re-include the built disk image as a committed release artifact.
+out/*
+!out/combatchess.po
 
 # merlin32 -V listings, regenerated on every build
 src/*_Output.txt
