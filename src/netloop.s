@@ -136,8 +136,9 @@ net_game_start
 net_poll_step
             stz   nl_dirty
             jsr   net_pump
-            bcc   :none
-            lda   proto_msg_type
+            bcs   :havemsg
+            rts
+:havemsg    lda   proto_msg_type
             cmp   #NET_S_ACTION_RESULT
             beq   :result
             cmp   #NET_S_STATE
@@ -180,7 +181,26 @@ net_poll_step
             lda   #1
             sta   nl_dirty
             rts
-:over       lda   #1
+:over       lda   proto_payload+1            ; winner side (0xFF = draw)
+            cmp   #$FF
+            bne   :haswin
+            lda   #RESULT_STALEMATE
+            bra   :setres
+:haswin     clc
+            adc   #RESULT_RED_WINS           ; RED_WINS + side
+:setres     sta   game_result
+            lda   proto_payload+0            ; server reason -> engine reason
+            cmp   #1                          ; OVER_SURRENDER
+            beq   :rsurr
+            cmp   #2                          ; OVER_STALEMATE
+            beq   :rstale
+            lda   #REASON_CRUISER             ; OVER_CRUISER (0)
+            bra   :setreason
+:rsurr      lda   #REASON_SURRENDER
+            bra   :setreason
+:rstale     lda   #REASON_STALEMATE
+:setreason  sta   result_reason
+            lda   #1
             sta   nl_over
             rts
 :none       rts

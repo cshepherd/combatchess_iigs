@@ -95,7 +95,42 @@ netstate_apply
             sta   occupant,y
 :nextu      inc   np_i
             jmp   :ul
-:udone      rts
+:udone
+* mirror the server's turn + clocks into the engine so the HUD and turn
+* logic read the server's truth (the server owns time, spec 22)
+            lda   ns_active
+            sta   active_side
+            ldx   #3                        ; side_time RED = ns_red_ms >> 4 (ms -> ticks)
+:crt        lda   ns_red_ms,x
+            sta   side_time,x
+            dex
+            bpl   :crt
+            ldx   #4
+:crs        lsr   side_time+3
+            ror   side_time+2
+            ror   side_time+1
+            ror   side_time+0
+            dex
+            bne   :crs
+            ldx   #3                        ; side_time BLACK = ns_black_ms >> 4
+:cbt        lda   ns_black_ms,x
+            sta   side_time+4,x
+            dex
+            bpl   :cbt
+            ldx   #4
+:cbs        lsr   side_time+7
+            ror   side_time+6
+            ror   side_time+5
+            ror   side_time+4
+            dex
+            bne   :cbs
+            jsr   get_tick                   ; turn_start_tick = now, so the active
+            ldx   #3                        ; side's clock shows the stored ticks
+:ctt        lda   now_tick,x                 ; (not floored by a stale elapsed)
+            sta   turn_start_tick,x
+            dex
+            bpl   :ctt
+            rts
 
 np_i         dfb   0
 np_x         dfb   0

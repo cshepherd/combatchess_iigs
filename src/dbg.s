@@ -242,6 +242,16 @@ eng_net_send_fire
  clc
  rts
 
+* eng_net_send_end - tell the server to end our turn.
+eng_net_send_end
+ MX %00
+ sep #$30
+ MX %11
+ jsr net_send_end
+ rep #$30
+ MX %00
+ rts
+
 net_tgt ds 2
 
 *----------------------------------------------------------
@@ -251,7 +261,10 @@ net_tgt ds 2
 *----------------------------------------------------------
 update_clock
  MX %00
+ jsr is_net_mode           ; the server owns time online -- no local time-out
+ bcs :nocheck
  jsr eng_clock_check
+:nocheck
  jsr note_game_over
  lda active_side
  and #$00FF
@@ -781,6 +794,16 @@ k_cancel
 
 k_end_turn
  MX %00
+ jsr is_net_mode           ; network game: tell the server; it switches sides
+ bcc :local
+ jsr eng_net_send_end
+ lda #MODE_SELECT
+ sta mode
+ lda #$FF
+ sta sel_unit
+ lda #s_turn_over
+ jmp set_msg
+:local
  jsr eng_turn_end
  lda #MODE_SELECT
  sta mode
