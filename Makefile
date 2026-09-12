@@ -77,12 +77,15 @@ $(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp $(BINS)
 	cp out/cc out/CC.SYSTEM\#FF2000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/CC.SYSTEM\#FF2000 --quiet
 	rm out/CC.SYSTEM\#FF2000
-	cp out/title out/TITLE\#FF2000
-	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TITLE\#FF2000 --quiet
-	rm out/TITLE\#FF2000
-	cp out/game out/GAME\#FF2000
-	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/GAME\#FF2000 --quiet
-	rm out/GAME\#FF2000
+	# TITLE, GAME (and TEST) are chained by the launcher, never booted
+	# on their own, so they are BIN ($$06) not SYS -- CC.SYSTEM is the
+	# only launchable system file. They still load at $$2000 (#062000).
+	cp out/title out/TITLE\#062000
+	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TITLE\#062000 --quiet
+	rm out/TITLE\#062000
+	cp out/game out/GAME\#062000
+	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/GAME\#062000 --quiet
+	rm out/GAME\#062000
 	# Ripped sound-effect samples, loaded into a spare bank at game start.
 	cp res/sounds.bin out/SOUNDS\#060000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/SOUNDS\#060000 --quiet
@@ -97,9 +100,9 @@ $(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp $(BINS)
 	rm out/TM\#060000
 ifeq ($(INCLUDE_TESTS),1)
 	# Rules self-tests: T on the title screen, or 00/1004g in KEGS.
-	cp out/test out/TEST\#FF2000
-	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TEST\#FF2000 --quiet
-	rm out/TEST\#FF2000
+	cp out/test out/TEST\#062000
+	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TEST\#062000 --quiet
+	rm out/TEST\#062000
 endif
 	$(CADIUS) CATALOG $(IMGFILE)
 
