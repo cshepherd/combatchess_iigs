@@ -424,6 +424,10 @@ options_page
  ldx #8
  ldy #144
  jsr draw_line
+ lda #seg_botlevel
+ ldx #8
+ ldy #154
+ jsr draw_line
  lda #seg_help1
  ldx #8
  ldy #168
@@ -653,14 +657,14 @@ step_field
  rts
 
 * cfg address, minimum, maximum, in the original's cursor order.
-NUM_FIELDS = 11
-* Per field (0..10): the segment list its value lives on, and
+NUM_FIELDS = 12
+* Per field (0..11): the segment list its value lives on, and
 * the line's baseline y. Used by draw_field.
 opt_field_seg
  da seg_board,seg_tanks,seg_tanks,seg_cars,seg_cars,seg_first
- da seg_cpu,seg_time,seg_time,seg_moves,seg_moves
+ da seg_cpu,seg_time,seg_time,seg_moves,seg_moves,seg_botlevel
 opt_field_y
- dfb 44,64,64,74,74,94,104,124,124,144,144
+ dfb 44,64,64,74,74,94,104,124,124,144,144,154
 
 field_tab
  da cfg_board
@@ -685,6 +689,8 @@ field_tab
  dfb 1,20
  da cfg_shoot
  dfb 1,2
+ da cfg_bot_level
+ dfb CFG_BOT_RANDOM,CFG_BOT_MAX
 
 *----------------------------------------------------------
 * fmt_fields - the numbers and names into the segment
@@ -740,6 +746,12 @@ fmt_fields
  tax
  lda cpu_names,x
  sta seg_cpu
+ lda cfg_bot_level
+ and #$00FF
+ asl
+ tax
+ lda bot_level_names,x
+ sta seg_botlevel+3        ; the value word after the "NETWORK BOT: " prefix
  rts
 
 * fmt_num - A = value (0-99) as 1 or 2 digits into the
@@ -793,6 +805,7 @@ fmt_2z
 
 side_start_names da s_red5,s_black5
 cpu_names        da s_cpu0,s_cpu1,s_cpu2,s_cpu3
+bot_level_names  da s_bot_random,s_bot_greedy,s_bot_chooser
 
 *----------------------------------------------------------
 * Segment lists (da string, dfb style; zero word ends).
@@ -911,6 +924,12 @@ seg_moves
  da nb_shoot
  dfb 10
  da 0
+seg_botlevel
+ da s_bot_pre
+ dfb $80+STYLE_NORMAL
+ da 0                      ; patched (seg_botlevel+3): the level name
+ dfb 11
+ da 0
 seg_help1
  da s_help1
  dfb $80+STYLE_NORMAL
@@ -995,6 +1014,14 @@ s_time       asc 'TIME LIMITS (MINUTES): BLACK '
 s_moves      asc 'MOVES PER TURN IS '
              dfb 0
 s_shoot      asc '; SHOOT OPTION #'
+             dfb 0
+s_bot_pre    asc 'NETWORK BOT: '
+             dfb 0
+s_bot_random asc 'RANDOM'
+             dfb 0
+s_bot_greedy asc 'GREEDY'
+             dfb 0
+s_bot_chooser asc 'CHOOSER'
              dfb 0
 s_help1      asc 'O OR DOWN: NEXT FIELD     UP: PREVIOUS'
              dfb 0

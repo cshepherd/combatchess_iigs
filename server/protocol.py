@@ -279,17 +279,27 @@ QUEUE_QUICK = 0
 QUEUE_HUMAN = 1
 QUEUE_BOT = 2
 
+# Bot difficulty a client may request with a QUEUE_BOT join (the player picks it
+# on the options screen). BOT_DEFAULT leaves the choice to the server's CC_BOT.
+BOT_RANDOM = 0
+BOT_GREEDY = 1
+BOT_CHOOSER = 2
+BOT_DEFAULT = 0xFF
+
 
 @dataclass
 class QueueJoin:
     mode: int = QUEUE_QUICK
+    bot_level: int = BOT_DEFAULT
 
     def encode(self) -> bytes:
-        return struct.pack("<B", self.mode)
+        return struct.pack("<BB", self.mode, self.bot_level)
 
     @classmethod
     def decode(cls, payload: bytes) -> "QueueJoin":
-        return cls(payload[0])
+        # tolerate a legacy 1-byte join (no level -> server default)
+        level = payload[1] if len(payload) > 1 else BOT_DEFAULT
+        return cls(payload[0], level)
 
 
 @dataclass

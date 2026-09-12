@@ -55,9 +55,9 @@ The IIGS connects to its **DHCP gateway on TCP port 1984**, so the match server 
 python3 server/match_server.py          # listens on 0.0.0.0:1984
 ```
 
-Pressing N asks for a bot match, and the server spawns an opponent bot that connects back as an ordinary client. Environment variables tune it:
+Pressing N asks for a bot match, and the server spawns an opponent bot that connects back as an ordinary client. The player picks the opponent on the options screen — the **NETWORK BOT** field cycles RANDOM / GREEDY / CHOOSER — and the choice rides along in the queue request. Environment variables set the server-side default (used when a client does not specify) and tune the rest:
 
-- `CC_BOT=greedy` uses the greedy bot (`bots/greedy_bot.py`, the network twin of `src/aiplayer.s`), `CC_BOT=chooser` the stronger search bot (`bots/chooser_bot.py`, spec 29.1: it looks a ply ahead and beats greedy roughly two to one); the default is the random bot (`bots/random_bot.py`).
+- `CC_BOT=greedy` uses the greedy bot (`bots/greedy_bot.py`, the network twin of `src/aiplayer.s`), `CC_BOT=chooser` the stronger search bot (`bots/chooser_bot.py`, spec 29.1: it looks a ply ahead and beats greedy roughly two to one); the default is the random bot (`bots/random_bot.py`). A client's own choice overrides this.
 - `CC_BOARD=<1..10>` picks the board (default 1; the armies engage on the more open boards 6–8).
 - `CC_GRACE=<seconds>` is the reconnect grace window (default 120): how long a match survives a dropped human before the opponent wins by abandonment.
 

@@ -438,6 +438,8 @@ cfg_defaults
  sta cfg_moves
  lda #1
  sta cfg_shoot
+ lda #CFG_BOT_GREEDY       ; the reasonable-default network opponent
+ sta cfg_bot_level
  lda #CFG_MAGIC
  sta cfg_valid
  plp

@@ -48,6 +48,14 @@ CFG_CPU_BOTH    = 3
 * wait_key and the debug board loop both honour it.
 inject_key      = $1110  ; word
 
+* Which bot a QUEUE_BOT network game asks for (options screen). Outside the
+* cfg_valid block ($1104-$110F is full); cfg_defaults still initialises it.
+cfg_bot_level   = $1112  ; byte: 0 random, 1 greedy, 2 chooser (CFG_BOT_*)
+CFG_BOT_RANDOM  = 0
+CFG_BOT_GREEDY  = 1
+CFG_BOT_CHOOSER = 2
+CFG_BOT_MAX     = 2
+
 * Sound samples (SOUNDS file) are loaded once into a Memory-Manager
 * bank; the base persists here across the title/game cycle so GAME
 * re-patches its parameter blocks each run without reloading.

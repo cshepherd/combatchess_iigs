@@ -109,14 +109,17 @@ net_build_hello
             jsr   proto_finish
             rts
 
-* net_build_queue: A = mode. Builds C_QUEUE_JOIN.
+* net_build_queue: A = mode. Builds C_QUEUE_JOIN (mode, bot_level). The bot
+* level (which opponent a QUEUE_BOT game asks for) comes from cfg_bot_level.
 net_build_queue
             sta   ng_tmp
             jsr   _ng_seq
             lda   #NET_C_QUEUE_JOIN
             jsr   proto_begin
             lda   ng_tmp
-            jsr   proto_emit
+            jsr   proto_emit             ; mode
+            lda   cfg_bot_level
+            jsr   proto_emit             ; bot_level (ignored by a human match)
             jsr   proto_finish
             rts
 

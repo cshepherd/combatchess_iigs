@@ -79,12 +79,13 @@
       "type": 3,
       "type_name": "C_QUEUE_JOIN",
       "seq": 3,
-      "payload_len": 1,
-      "frame_len": 9,
+      "payload_len": 2,
+      "frame_len": 10,
       "fields": {
-        "mode": 2
+        "mode": 2,
+        "bot_level": 1
       },
-      "hex": "434301030100030002"
+      "hex": "43430103020003000201"
     },
     {
       "name": "move",

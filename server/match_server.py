@@ -405,7 +405,7 @@ class Server:
                 await sess.send(P.error_frame(2, "hello first"))
                 return
             join = P.QueueJoin.decode(frame.payload)
-            await self.enqueue(sess, join.mode)
+            await self.enqueue(sess, join.mode, join.bot_level)
         elif t == P.C_PING:
             ping = P.Ping.decode(frame.payload)
             await sess.send(P.pong_frame(P.Pong(ping.nonce), seq=frame.seq))
@@ -417,12 +417,13 @@ class Server:
         else:
             await sess.send(P.error_frame(3, f"unexpected type 0x{t:02X}"))
 
-    async def enqueue(self, sess: Session, mode: int):
-        log(f"session {sess.session_id}: QUEUE mode={mode}")
+    async def enqueue(self, sess: Session, mode: int, bot_level: int = P.BOT_DEFAULT):
+        log(f"session {sess.session_id}: QUEUE mode={mode} bot_level={bot_level}")
         if mode == P.QUEUE_BOT:
-            # spawn a bot client that connects back and is matched to this human
+            # spawn a bot client that connects back and is matched to this human;
+            # the client's requested difficulty picks which bot (else CC_BOT)
             self.waiting.append(sess)
-            asyncio.create_task(self._spawn_bot())
+            asyncio.create_task(self._spawn_bot(bot_level))
             return
         self.waiting.append(sess)
         await self._try_match()
@@ -436,16 +437,20 @@ class Server:
             match = Match(self, a, b, board=self.board)
             await match.start()
 
-    async def _spawn_bot(self):
-        # import lazily so the server runs even without the bot module. CC_BOT
-        # selects the opponent (default random): "greedy" pairs the greedy bot,
-        # "chooser" the stronger search bot (spec 29.1).
+    async def _spawn_bot(self, bot_level=P.BOT_DEFAULT):
+        # import lazily so the server runs even without the bot module. The
+        # client's requested difficulty wins; when it defers (BOT_DEFAULT) the
+        # CC_BOT env decides (default random). "chooser" is the search bot (29.1).
         host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host
-        pick = os.environ.get("CC_BOT", "random").lower()
-        if pick.startswith("chooser"):
+        if bot_level == P.BOT_DEFAULT:
+            env = os.environ.get("CC_BOT", "random").lower()
+            bot_level = (P.BOT_CHOOSER if env.startswith("chooser")
+                         else P.BOT_GREEDY if env.startswith("greedy")
+                         else P.BOT_RANDOM)
+        if bot_level == P.BOT_CHOOSER:
             from bots import chooser_bot
             asyncio.create_task(chooser_bot.run(host, self.port, name="Chooser"))
-        elif pick.startswith("greedy"):
+        elif bot_level == P.BOT_GREEDY:
             from bots import greedy_bot
             asyncio.create_task(greedy_bot.run(host, self.port, name="GreedyBot"))
         else:

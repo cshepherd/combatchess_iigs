@@ -32,10 +32,12 @@ start       sei
             pha
             plb
 
-* ------- build queue_bot (seq=3, mode=QUEUE_BOT) -------
+* ------- build queue_bot (seq=3, mode=QUEUE_BOT, bot_level=GREEDY) -------
             lda   #3
             sta   ng_seq+0
             stz   ng_seq+1
+            lda   #CFG_BOT_GREEDY          ; the fixture's bot_level
+            sta   cfg_bot_level
             lda   #NET_QUEUE_BOT
             jsr   net_build_queue
             lda   #<$4000

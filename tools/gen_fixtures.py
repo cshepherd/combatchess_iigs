@@ -77,7 +77,7 @@ FIXTURES = [
     (
         "queue_bot",
         P.C_QUEUE_JOIN, 3,
-        lambda: P.QueueJoin(mode=P.QUEUE_BOT),
+        lambda: P.QueueJoin(mode=P.QUEUE_BOT, bot_level=P.BOT_GREEDY),
         P.QueueJoin.decode,
     ),
     (
