@@ -53,6 +53,9 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   lda #10                   ; light gray border to match the grey plaque ground ($0AAA)
   jsr set_border
   jsr ntp_start             ; start the title music (silent if absent)
+  lda ntp_playing           ; a failed network setup returns here with IRQs masked;
+  beq :show                 ; once the NTP DOC handler is up it is safe to unmask
+  cli                       ; (a no-op on the normal, already-enabled entry)
 :show
   jsr draw_title
 :key

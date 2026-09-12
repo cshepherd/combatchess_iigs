@@ -226,15 +226,24 @@ net_status
             mx    %11
             rts
 
-* net_fail: A/X = message ptr. Print it, then hold ~2s so it can be read
-* before net_game_start returns and the caller falls back to a local game.
+* net_fail: A/X = message ptr. Print it, then "PRESS ANY KEY TO RETURN" and
+* wait for a key so the failure can be read; net_game_start then returns carry
+* set and game.s goes back to the title. Runs 8-bit with IRQs masked; the
+* keyboard poll is a plain soft-switch read, so masking does not matter.
 net_fail
             jsr   net_status
-            ldx   #60
-:fw         jsr   net_delay
-            dex
-            bne   :fw
-            rts
+            lda   #<s_net_anykey
+            ldx   #>s_net_anykey
+            jsr   net_status
+            sta   $C010                        ; clear any pending key strobe
+:wk         lda   inject_key                   ; debug hook (like dbg_run/wait_key)
+            bne   :got
+            lda   $C000                         ; else the real keyboard
+            bpl   :wk
+            sta   $C010
+            bra   :done
+:got        stz   inject_key
+:done       rts
 
 net_msg_y    dw    NET_MSG_Y0
 s_net_title  asc   'COMBAT CHESS -- NETWORK GAME'
@@ -256,6 +265,8 @@ s_net_start  asc   'STARTING GAME...'
 s_net_nocard asc   'NO UTHERNET CARD FOUND'
              dfb   0
 s_net_failc  asc   'CONNECTION FAILED'
+             dfb   0
+s_net_anykey asc   'PRESS ANY KEY TO RETURN'
              dfb   0
 
 * net_poll_step: pump one server frame if available and apply it; sets

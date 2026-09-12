@@ -42,6 +42,10 @@
   jsr net_game_start        ; blocks for seconds before the game's sound handler
   bcc :haveboard            ; is up, and a stray DOC interrupt left by the title
   stz net_mode              ; music would otherwise crash the firmware
+  sec                       ; setup failed (net_fail already waited for a key):
+  xce                       ; back to the title rather than a local game. IRQs
+  MX %11                    ; stay masked; the title re-enables them once its NTP
+  jmp LAUNCH_TITLE          ; sound handler is up (title.s)
 :local
   jsr setup_game            ; the board first: dbg_init reads it
 :haveboard
