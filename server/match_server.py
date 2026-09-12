@@ -29,7 +29,10 @@ import rules as R
 
 SERVER_NAME = "CombatChess"
 DEFAULT_BOARD = 1
-DEFAULT_MOVES = 5
+# Moves per turn. 3 matches the Atari original's default (and the local
+# game's cfg_moves), so a network game plays the same as a hot-seat one
+# unless CC_MOVES overrides it (range 1-20, like the options screen).
+DEFAULT_MOVES = int(os.environ.get("CC_MOVES", "3"))
 # Reconnect grace: how long (seconds) a match survives a human's dropped
 # connection before the opponent wins by abandonment (spec 24.2). Tests set
 # CC_GRACE low; bots never get a grace (they cannot reconnect).

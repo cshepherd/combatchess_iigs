@@ -101,7 +101,7 @@ def _load_map(n: int):
 
 
 class GameState:
-    def __init__(self, board_number: int, moves_per_turn: int = 5,
+    def __init__(self, board_number: int, moves_per_turn: int = 3,
                  shoot_option: int = 1, starting_side: int = R.SIDE_RED,
                  red_time_ms: int = 600000, black_time_ms: int = 600000,
                  rng: "random.Random | None" = None,
