@@ -49,7 +49,10 @@ def _action_result_state(payload: bytes):
 
 
 async def run(host="127.0.0.1", port=1984, name="RandomBot", max_actions=2000,
-              seed=None):
+              seed=None, pass_prob=0.0):
+    # pass_prob: chance per action of ending the turn instead of acting, so
+    # random-vs-random games reach the idle-turn stalemate instead of running
+    # to the action cap. 0 (the default, used by the live bot) never passes.
     rng = random.Random(seed)
     reader, writer = await asyncio.open_connection(host, port)
     parser = P.FrameParser()
@@ -75,6 +78,8 @@ async def run(host="127.0.0.1", port=1984, name="RandomBot", max_actions=2000,
         cv = S.ClientView(snap)
         fires = cv.legal_fires(my_side)
         moves = cv.legal_moves(my_side) if snap["moves_used"] < moves_per_turn else []
+        if pass_prob and rng.random() < pass_prob:
+            fires = moves = []                    # pass -> ends the turn below
         if fires:
             a, t, _ = rng.choice(fires)
             await send(P.pack_frame(P.C_FIRE,
