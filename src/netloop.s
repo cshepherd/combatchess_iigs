@@ -45,6 +45,9 @@ net_game_start
             ldx   #>s_net_det
             jsr   net_status
             jsr   net_config_static
+            lda   #<s_net_dhcp                ; DHCP request going out
+            ldx   #>s_net_dhcp
+            jsr   net_status
             jsr   net_configure             ; DHCP
             bcc   :ok1
             lda   #<s_net_failc
@@ -52,7 +55,12 @@ net_game_start
             jsr   net_fail
             sec
             rts
-:ok1        lda   #<s_net_conn                ; DHCP done; opening the TCP link
+:ok1        lda   #<s_net_lease               ; DHCP answer, then the lease we got
+            ldx   #>s_net_lease
+            jsr   net_status
+            jsr   net_show_ip                 ; "  IP <our address>"
+            jsr   net_show_gw                 ; "  GATEWAY <server address>"
+            lda   #<s_net_conn                ; DHCP done; opening the TCP link
             ldx   #>s_net_conn
             jsr   net_status
             inc   net_src_port+1             ; bump the TCP source port each game so a
@@ -244,11 +252,93 @@ net_status
             mx    %11
             rts
 
+* net_show_ip / net_show_gw: one status line = a label then the dotted-decimal
+* address the DHCP lease gave us (net_ip / net_gw). Entered 8-bit like
+* net_status; the line is composed in 16-bit and handed back to net_status.
+net_show_ip
+            mx    %11                          ; entered 8-bit like net_status
+            lda   #<s_net_ip
+            ldx   #>s_net_ip
+            jsr   net_line_begin
+            mx    %00                          ; net_line_begin left us in 16-bit
+            lda   net_ip+0
+            and   #$00FF
+            jsr   lb_octet
+            lda   net_ip+1
+            and   #$00FF
+            jsr   lb_octet
+            lda   net_ip+2
+            and   #$00FF
+            jsr   lb_octet
+            lda   net_ip+3
+            and   #$00FF
+            jsr   lb_ipbyte
+            jmp   net_line_end
+net_show_gw
+            mx    %11                          ; entered 8-bit (net_show_ip left 16-bit)
+            lda   #<s_net_gw
+            ldx   #>s_net_gw
+            jsr   net_line_begin
+            mx    %00
+            lda   net_gw+0
+            and   #$00FF
+            jsr   lb_octet
+            lda   net_gw+1
+            and   #$00FF
+            jsr   lb_octet
+            lda   net_gw+2
+            and   #$00FF
+            jsr   lb_octet
+            lda   net_gw+3
+            and   #$00FF
+            jsr   lb_ipbyte
+            jmp   net_line_end
+
+* net_line_begin: A/X (8-bit) = prefix ptr. rep to 16-bit and start a builder
+* line with the prefix. net_line_end finishes it and draws it via net_status.
+net_line_begin
+            sta   nd_pre
+            stx   nd_pre+1
+            rep   #$30
+            mx    %00
+            jsr   lb_reset
+            lda   nd_pre
+            jmp   lb_str
+net_line_end
+            mx    %00
+            jsr   lb_end
+            sep   #$30
+            mx    %11
+            lda   #<line_buf
+            ldx   #>line_buf
+            jmp   net_status
+
+* lb_octet: append A (0-255) then a '.'; lb_ipbyte: append A (0-255) as 1-3
+* decimal digits with no leading spaces. Both 16-bit.
+lb_octet
+            mx    %00
+            jsr   lb_ipbyte
+            lda   #s_dot
+            jmp   lb_str
+lb_ipbyte
+            mx    %00
+            cmp   #100
+            bcs   :d3
+            cmp   #10
+            bcs   :d2
+            ldx   #1
+            jmp   lb_dec
+:d2         ldx   #2
+            jmp   lb_dec
+:d3         ldx   #3
+            jmp   lb_dec
+
 * net_fail: A/X = message ptr. Print it, then "PRESS ANY KEY TO RETURN" and
 * wait for a key so the failure can be read; net_game_start then returns carry
 * set and game.s goes back to the title. Runs 8-bit with IRQs masked; the
 * keyboard poll is a plain soft-switch read, so masking does not matter.
 net_fail
+            mx    %11                          ; 8-bit; the helpers above end in 16-bit
             jsr   net_status
             lda   #<s_net_anykey
             ldx   #>s_net_anykey
@@ -264,10 +354,21 @@ net_fail
 :done       rts
 
 net_msg_y    dw    NET_MSG_Y0
+nd_pre       dw    0                      ; scratch: prefix ptr for net_line_begin
 s_net_title  asc   'COMBAT CHESS -- NETWORK GAME'
              dfb   0
 s_net_det    asc   'UTHERNET II DETECTED IN SLOT '
 nd_slot      dfb   '1'
+             dfb   0
+s_net_dhcp   asc   'REQUESTING DHCP LEASE...'
+             dfb   0
+s_net_lease  asc   'DHCP LEASE RECEIVED:'
+             dfb   0
+s_net_ip     asc   '  IP  '
+             dfb   0
+s_net_gw     asc   '  GATEWAY  '
+             dfb   0
+s_dot        asc   '.'
              dfb   0
 s_net_conn   asc   'CONNECTING...'
              dfb   0
