@@ -66,7 +66,9 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   cmp #'O'
   beq :options
   cmp #'N'
-  beq :netgame
+  beq :netbot
+  cmp #'H'
+  beq :nethuman
  do INCLUDE_TESTS
   cmp #'T'
   beq :tests
@@ -75,9 +77,15 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
 :options
   jsr options_page
   bra :show
+:netbot
+  ldx #0                    ; N: play the server's bot
+  bra :netgame
+:nethuman
+  ldx #1                    ; H: wait for a second human
 :netgame
   lda #1                    ; request a network game; GAME connects to the server
-  sta net_mode
+  sta net_mode              ; 16-bit A: this store also writes the adjacent byte
+  stx net_human             ; ($1131), so set net_human AFTER it, not before
   bra :launch
 :game
   stz net_mode              ; a local hot-seat game
@@ -831,6 +839,10 @@ seg_push_net
  dfb $80+STYLE_NORMAL
  da s_key_n
  dfb $80+STYLE_INVERSE
+ da s_net_mid
+ dfb $80+STYLE_NORMAL
+ da s_key_h
+ dfb $80+STYLE_INVERSE
  da s_net_b
  dfb $80+STYLE_NORMAL
  da 0
@@ -945,7 +957,11 @@ s_push3b     asc ' FOR THE RULES SELF-TESTS.'
              dfb 0
 s_key_n      asc 'N'
              dfb 0
-s_net_b      asc ' FOR A NETWORK GAME.'
+s_net_mid    asc ' VS BOT OR '
+             dfb 0
+s_key_h      asc 'H'
+             dfb 0
+s_net_b      asc ' VS HUMAN (NET).'
              dfb 0
 s_by         asc 'GAME BY LOU MATTSFIELD'
              dfb 0

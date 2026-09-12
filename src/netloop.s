@@ -13,9 +13,11 @@
 *----------------------------------------------------------
 
 * net_game_start: DHCP, connect to the server, HELLO/WELCOME, request a
-* bot match, and apply the MATCH_START snapshot into the engine. Sets
-* cfg_board from the match so dbg_init picks the right palette. Returns
-* carry clear on success (a match is live), carry set on any failure.
+* match (a bot, or a second human when net_human is set), and apply the
+* MATCH_START snapshot into the engine. Sets cfg_board from the match so
+* dbg_init picks the right palette. A human wait is cancelable with any
+* key. Returns carry clear on success (a match is live), carry set on
+* any failure or cancel.
 * Clobbers A/X/Y and the net scratch.
             mx    %11
 
@@ -124,22 +126,37 @@ net_game_start
 :welcome    lda   #2
             sta   ng_seq+0
             stz   ng_seq+1
-            lda   #NET_QUEUE_BOT
-            jsr   net_build_queue
+            lda   #NET_QUEUE_BOT               ; N: match the server's bot
+            ldx   net_human
+            beq   :qsend
+            lda   #NET_QUEUE_HUMAN             ; H: wait for a second human
+:qsend      jsr   net_build_queue
             jsr   net_frame_send
             lda   #<s_net_wait                ; queued; waiting for a match
             ldx   #>s_net_wait
             jsr   net_status
             bra   :hloop
-:hidle      inc   nl_to+0
+:hidle      lda   inject_key                   ; a keypress cancels a pending wait
+            bne   :hcancel                      ;   (real key at $C000 or debug hook)
+            lda   $C000
+            bpl   :htmr
+            sta   $C010
+            bra   :hcancel
+:htmr       inc   nl_to+0
             bne   :h2
             inc   nl_to+1
-:h2         lda   nl_to+1
+:h2         lda   net_human                    ; a human wait has no timeout: a second
+            bne   :hcont                        ;   human may take a while; a key exits
+            lda   nl_to+1
             cmp   #$08
             bcc   :hcont
             jmp   :failest
 :hcont      jsr   net_delay
             bra   :hloop
+:hcancel    stz   inject_key                   ; consume the debug-hook key, close, and
+            jsr   net_close                     ;   return to the title without an error
+            sec
+            rts
 :matched    ldx   #0                          ; opponent name (@ +37) -> the message
 :nmc        lda   proto_payload+37,x
             sta   nm_name,x

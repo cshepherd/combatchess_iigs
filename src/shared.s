@@ -57,6 +57,7 @@ snd_loaded      = $1124  ; byte: nonzero once cc.s load_res has run (once/boot)
 * Network play (spec N4). Nonzero selects a network game: GAME
 * connects to the match server instead of running a local hot-seat.
 net_mode        = $1130  ; byte: 0 local, nonzero network game
+net_human       = $1131  ; byte: in a net game, 1 waits for a human, 0 plays a bot
 
 * Heartbeat task record (see toolbox_init): 20 bytes the
 * firmware keeps a pointer to for the whole session, so it
