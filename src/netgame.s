@@ -28,6 +28,9 @@ NET_S_STATE       = $16
 NET_S_GAME_OVER   = $17
 NET_C_PING        = $20
 NET_S_PONG        = $21
+NET_C_RECONNECT   = $30
+NET_S_RECONNECT_RESULT = $31
+NET_RC_OK         = $00            ; S_RECONNECT_RESULT result codes
 
 * Matchmaking modes + client kinds (protocol.py).
 NET_QUEUE_QUICK = 0
@@ -163,6 +166,39 @@ net_build_surrender
             lda   #NET_C_SURRENDER
             jsr   proto_begin
             jsr   _ng_action_head
+            jsr   proto_finish
+            rts
+
+* net_build_reconnect: C_RECONNECT (spec 24.3) -- resume a dropped match.
+* Emits match_id (u32, ng_match_id), the 16-byte token (ng_token), the last
+* action id (u16, ng_action_id) and last state serial (u32 = 0; advisory --
+* the server always resends the full state). proto_emit keeps X.
+net_build_reconnect
+            jsr   _ng_seq
+            lda   #NET_C_RECONNECT
+            jsr   proto_begin
+            ldx   #0                       ; match_id (u32)
+:mi         lda   ng_match_id,x
+            sta   proto_val32,x
+            inx
+            cpx   #4
+            bne   :mi
+            jsr   proto_u32
+            ldx   #0                       ; token (16 bytes)
+:tk         lda   ng_token,x
+            jsr   proto_emit
+            inx
+            cpx   #16
+            bne   :tk
+            lda   ng_action_id+0            ; last_action_id (u16)
+            ldx   ng_action_id+1
+            jsr   proto_u16
+            ldx   #0                       ; last_state_serial (u32 = 0)
+:zs         stz   proto_val32,x
+            inx
+            cpx   #4
+            bne   :zs
+            jsr   proto_u32
             jsr   proto_finish
             rts
 
@@ -315,6 +351,7 @@ NS_MAX_UNITS = 22
 
 ng_seq       dfb   0,0                ; frame sequence for the next build
 ng_match_id  dfb   0,0,0,0            ; current match id (u32 LE)
+ng_token     ds    16                 ; this match's reconnect token (spec 24.1)
 ng_action_id dfb   0,0                ; client action sequence (u16)
 ng_build     dfb   0,0,0,0            ; client_build for HELLO (u32)
 ng_cap       dfb   0,0                ; capability_bits for HELLO (u16)

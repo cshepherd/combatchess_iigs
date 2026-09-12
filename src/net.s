@@ -462,11 +462,20 @@ net_send
             jsr   net_setaddr
             lda   #W5_CMD_SEND
             jsr   net_setdata
-:wt         lda   #>W5_S0_CR
+            stz   net_timeout+0        ; bound the completion poll: a broken
+            stz   net_timeout+1        ; socket never clears CR, so a reconnect
+:wt         lda   #>W5_S0_CR           ; into a dead link must not hang the game
             ldx   #<W5_S0_CR
             jsr   net_setaddr
             jsr   net_getdata
+            beq   :wtdone              ; CR cleared: SEND done
+            inc   net_timeout+0
             bne   :wt
+            inc   net_timeout+1
+            bne   :wt
+            sec                        ; ~64K polls with no completion: give up
+            rts
+:wtdone
 
             sec                          ; net_len -= seg, then loop
             lda   net_len+0

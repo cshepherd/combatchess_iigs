@@ -21,6 +21,9 @@
 
 net_game_start
             stz   nl_over
+            stz   nl_matched
+            stz   nl_lost
+            stz   nl_recon_tries
             stz   nl_action+0
             stz   nl_action+1
             jsr   net_init
@@ -119,6 +122,14 @@ net_game_start
             sta   cfg_board
             lda   proto_payload+6            ; moves/turn -> opt_moves_per_turn
             sta   opt_moves_per_turn         ; (setup_game is skipped in net mode)
+            ldx   #0                          ; reconnect token (16 bytes @ +21)
+:tkc        lda   proto_payload+21,x
+            sta   ng_token,x
+            inx
+            cpx   #16
+            bne   :tkc
+            lda   #1                          ; a match is live: enable reconnect
+            sta   nl_matched
 * decode + apply the embedded snapshot (skip the 37-byte prefix)
             clc
             lda   #<proto_payload
@@ -137,6 +148,7 @@ net_game_start
 * when nothing is waiting). Call once per game-loop frame. Clobbers A/X/Y.
 net_poll_step
             stz   nl_dirty
+            jsr   nl_check_link                ; dropped connection? resume via token
             jsr   net_pump
             bcs   :havemsg
             rts
@@ -209,6 +221,119 @@ net_poll_step
             sta   nl_over
             rts
 :none       rts
+
+* nl_check_link: once a match is live, watch socket 0's status each frame; if
+* the connection dropped (no longer ESTABLISHED) try to resume it with our
+* token. One-shot per drop -- a failed resume sets nl_lost so we stop hammering
+* (the game is effectively lost from the client's side). Clobbers A/X/Y.
+nl_check_link
+            lda   nl_matched
+            beq   :done                        ; no match yet
+            lda   nl_lost
+            bne   :done                        ; already gave up
+            lda   nl_over
+            bne   :done                        ; game finished normally
+            jsr   net_poll                       ; socket 0 status
+            cmp   #W5_SOCK_ESTAB
+            beq   :ok                            ; still connected
+            jsr   net_reconnect
+            bcs   :retry                         ; this attempt failed
+            stz   nl_recon_tries                 ; resumed -- reset the budget
+            rts
+:retry      inc   nl_recon_tries                 ; try again next frame, up to a cap
+            lda   nl_recon_tries                 ; (~8 x 7.5s fits the 120s grace,
+            cmp   #12                             ; and beats a flaky SYN)
+            bcc   :done
+            lda   #1                             ; out of tries: give up
+            sta   nl_lost
+            rts
+:ok         stz   nl_recon_tries
+:done       rts
+
+* net_reconnect: the TCP link dropped mid-match -- reopen it and resume with
+* our reconnect token (spec 24.3). Close socket 0, reconnect to the gateway,
+* send C_RECONNECT, and on S_RECONNECT_RESULT / RC_OK apply the restored
+* snapshot. Carry clear on success, carry set on failure. Clobbers A/X/Y.
+net_reconnect
+            jsr   net_close                      ; DISCON the dead socket (send FIN)
+            ldx   #8
+:cw         jsr   net_delay                       ; let the DISCON settle
+            dex
+            bne   :cw
+            lda   #>W5_S0_CR                       ; then a hard CLOSE: net_connect's
+            ldx   #<W5_S0_CR                       ; OPEN needs the socket in CLOSED,
+            jsr   net_setaddr                      ; but DISCON alone leaves it mid-
+            lda   #W5_CMD_CLOSE                     ; teardown (FIN_WAIT/CLOSE_WAIT)
+            jsr   net_setdata
+            ldx   #4
+:cw2        jsr   net_delay
+            dex
+            bne   :cw2
+            inc   net_src_port+1                  ; fresh 4-tuple
+            bne   :sp
+            inc   net_src_port+0
+:sp         ldx   #3                              ; dest = gateway : default port
+:ds         lda   net_gw,x
+            sta   net_dest_ip,x
+            dex
+            bpl   :ds
+            jsr   net_connect
+            bcc   :ewait
+            sec
+            rts
+:ewait      stz   nl_to+0                          ; wait for SOCK_ESTABLISHED
+            stz   nl_to+1
+:ew         jsr   net_poll
+            cmp   #W5_SOCK_ESTAB
+            beq   :estab
+            cmp   #W5_SOCK_CLOSED
+            beq   :fail
+            inc   nl_to+0
+            bne   :ew2
+            inc   nl_to+1
+:ew2        lda   nl_to+1                          ; ~7.5s per attempt (net_delay ~29ms
+            cmp   #$01                             ; x 256); nl_check_link retries so
+            bcs   :fail                            ; a flaky SYN gets several tries
+            jsr   net_delay
+            bra   :ew
+:fail       sec
+            rts
+:estab      jsr   proto_rx_reset
+            jsr   net_build_reconnect
+            jsr   net_frame_send
+            stz   nl_to+0                          ; wait for S_RECONNECT_RESULT
+            stz   nl_to+1
+:rl         jsr   net_pump
+            bcc   :ridle
+            lda   proto_msg_type
+            cmp   #NET_S_RECONNECT_RESULT
+            beq   :got
+            bra   :ridle                           ; other frame: keep the timeout ticking
+                                                   ; (never spin free on unexpected data)
+:ridle      inc   nl_to+0
+            bne   :r2
+            inc   nl_to+1
+:r2         lda   nl_to+1
+            cmp   #$02
+            bcs   :fail
+            jsr   net_delay
+            bra   :rl
+:got        lda   proto_payload+0                  ; result code
+            cmp   #NET_RC_OK
+            bne   :fail
+            clc                                     ; payload = code, side, then S_STATE
+            lda   #<proto_payload
+            adc   #2
+            sta   NSP
+            lda   #>proto_payload
+            adc   #0
+            sta   NSP+1
+            jsr   netstate_decode
+            jsr   netstate_apply
+            lda   #1
+            sta   nl_dirty
+            clc
+            rts
 
 * nl_anim_event: proto_payload+nl_off points at one S_ACTION_RESULT event
 * [type][nargs][args...]. Set the same mv_* / fr_* records the local
@@ -404,6 +529,9 @@ net_pump
 nl_name      asc   'iigs'
 nl_my_side   dfb   0
 nl_over      dfb   0
+nl_matched   dfb   0                  ; a match is live (token stored) -> watch the link
+nl_lost      dfb   0                  ; reconnect gave up; stop retrying
+nl_recon_tries dfb 0                  ; reconnect attempts since the link dropped
 nl_dirty     dfb   0
 nl_action    dfb   0,0
 nl_to        dfb   0,0
