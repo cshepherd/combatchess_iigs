@@ -107,15 +107,17 @@
       "type": 18,
       "type_name": "C_FIRE",
       "seq": 8,
-      "payload_len": 8,
-      "frame_len": 16,
+      "payload_len": 10,
+      "frame_len": 18,
       "fields": {
         "match_id": 16909060,
         "action_id": 10,
         "attacker_id": 5,
-        "target_id": 12
+        "target_id": 12,
+        "target_x": 0,
+        "target_y": 0
       },
-      "hex": "4343011208000800040302010a00050c"
+      "hex": "434301120a000800040302010a00050c0000"
     },
     {
       "name": "state_board1",

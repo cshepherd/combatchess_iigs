@@ -136,7 +136,8 @@ net_build_move
             jsr   proto_finish
             rts
 
-* net_build_fire: A = attacker id, X = target id. C_FIRE.
+* net_build_fire: A = attacker id, X = target id (0xFF = square shot). C_FIRE.
+* The target square ng_fire_x/ng_fire_y is emitted too (0 for a unit shot).
 net_build_fire
             sta   ng_tmp
             stx   ng_tmp2
@@ -147,6 +148,10 @@ net_build_fire
             lda   ng_tmp
             jsr   proto_emit
             lda   ng_tmp2
+            jsr   proto_emit
+            lda   ng_fire_x
+            jsr   proto_emit
+            lda   ng_fire_y
             jsr   proto_emit
             jsr   proto_finish
             rts
@@ -358,6 +363,8 @@ ng_cap       dfb   0,0                ; capability_bits for HELLO (u16)
 ng_tmp       dfb   0
 ng_tmp2      dfb   0
 ng_tmp3      dfb   0
+ng_fire_x    dfb   0                  ; C_FIRE target square (0 for a unit shot)
+ng_fire_y    dfb   0
 
 * Decoded S_STATE snapshot.
 ns_active    dfb   0

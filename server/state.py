@@ -22,6 +22,7 @@ MV_OK, MV_NO_UNIT, MV_NOT_LINE, MV_TOO_FAR, MV_BLOCKED, MV_NO_FUEL = range(6)
 FR_OK, FR_NO_UNIT, FR_NO_TARGET, FR_NOT_LINE, FR_OUT_OF_RANGE, \
     FR_BLOCKED, FR_NO_AMMO, FR_ALREADY = range(8)
 FR_MISS, FR_HIT, FR_KILL = 0, 1, 2
+FR_SQUARE = 0xFF          # C_FIRE target_id sentinel: a shot at a square (fire.s)
 
 # Event types (spec 19) for the presentation layer.
 EV_UNIT_MOVED = 1
@@ -60,6 +61,7 @@ class Unit:
     terr_hp: int
     alive: bool = True
     fired_at: set = field(default_factory=set)   # target ids fired at this turn
+    fired_sq: set = field(default_factory=set)   # (x,y) squares fired at this turn
 
     @property
     def flags(self) -> int:
@@ -267,6 +269,61 @@ class GameState:
         self._bump_serial()
         return outcome, events
 
+    def validate_fire_square(self, side, attacker_id, tx, ty):
+        """A shot at a destructible square (tree/bridge/grey) rather than a
+        unit -- fire.s fire_validate_at when no unit stands there."""
+        a = self.units.get(attacker_id)
+        if a is None or not a.alive or a.side != side:
+            return FR_NO_UNIT, 0, None
+        if not (0 <= tx < R.BOARD_W and 0 <= ty < R.BOARD_H):
+            return FR_NO_TARGET, 0, None
+        if R.TERR_MAX_HP[self.cell(tx, ty)] <= 0:     # open/water/mountain: nothing to hit
+            return FR_NO_TARGET, 0, None
+        line = R.line_find(a.x, a.y, tx, ty)
+        if line is None:
+            return FR_NOT_LINE, 0, None
+        pct = R.hit_chance(a.cls, line.orient, line.dist)
+        if pct == 0:
+            return FR_OUT_OF_RANGE, 0, None
+        if not self._los_clear(a.x, a.y, line, tx, ty):
+            return FR_BLOCKED, 0, None
+        if a.ammo <= 0:
+            return FR_NO_AMMO, 0, None
+        if (tx, ty) in a.fired_sq:                     # spec 13: once per square per turn
+            return FR_ALREADY, 0, None
+        return FR_OK, pct, line
+
+    def apply_fire_square(self, side, attacker_id, tx, ty):
+        reason, pct, line = self.validate_fire_square(side, attacker_id, tx, ty)
+        if reason != FR_OK:
+            raise RuleError(reason)
+        a = self.units[attacker_id]
+        a.ammo -= 1
+        a.fired_sq.add((tx, ty))
+        # EV_SHOT_FIRED carries FR_SQUARE for the target so the client animates
+        # a square shot; attacker + endpoints drive the projectile.
+        events = [(EV_SHOT_FIRED, attacker_id, FR_SQUARE, a.x, a.y, tx, ty)]
+        cell = ty * R.BOARD_W + tx
+        roll = self.rng.randint(1, 100)
+        if roll <= pct:                                # hit: wear the square down
+            events.append((EV_SHOT_HIT, FR_SQUARE, tx, ty))
+            self.terr_hp[cell] = max(0, self.terr_hp[cell] - R.CLASS_DAMAGE[a.cls])
+            if self.terr_hp[cell] <= 0:                # destroyed -> terrain_after
+                old = self.terrain[cell]
+                new = R.TERRAIN_AFTER[old]
+                self.terrain[cell] = new
+                self.terr_hp[cell] = R.TERR_MAX_HP[new]
+                events.append((EV_TERRAIN_DESTROYED, tx, ty, old, new))
+                outcome = FR_KILL
+            else:
+                events.append((EV_TERRAIN_DAMAGED, tx, ty, self.terr_hp[cell]))
+                outcome = FR_HIT
+        else:
+            events.append((EV_SHOT_MISSED, FR_SQUARE, tx, ty))
+            outcome = FR_MISS
+        self._bump_serial()
+        return outcome, events
+
     def _destroy_unit(self, u: Unit):
         u.alive = False
         u.hp = 0
@@ -286,6 +343,7 @@ class GameState:
         self.inactive_turn_count = 0 if moved_or_fired else self.inactive_turn_count + 1
         for u in self.units.values():
             u.fired_at.clear()
+            u.fired_sq.clear()
         self.active_side = R.SIDE_BLACK if prev == R.SIDE_RED else R.SIDE_RED
         self.moves_used = 0
         self.turn_phase = PHASE_MOVE

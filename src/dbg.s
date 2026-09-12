@@ -219,18 +219,36 @@ eng_net_send_move
  MX %00
  rts
 
-* eng_net_send_fire - fire sel_unit at the unit under the cursor.
-* Carry set if a target unit was there and the shot was sent.
+* eng_net_send_fire - fire sel_unit at the unit under the cursor, or at the
+* square itself when it is destructible terrain (tree/bridge/grey) with no
+* unit on it (a square shot: target id 0xFF, square in ng_fire_x/y). Carry
+* set if a shot was sent; clear (-> "no unit there") over open ground.
 eng_net_send_fire
  MX %00
  ldx cur_x
  ldy cur_y
  jsr eng_get_unit_at        ; A = target unit id, carry set if present
- bcc :notarget
- and #$00FF
- sta net_tgt
- sep #$30
+ sep #$30                   ; carry survives; A -> low byte (the id)
  MX %11
+ bcc :square
+ sta net_tgt                ; unit shot
+ stz ng_fire_x
+ stz ng_fire_y
+ bra :send
+:square
+ ldx cur_x                  ; no unit: is the terrain destructible?
+ ldy cur_y
+ jsr get_cell               ; A = terrain type
+ jsr cell_flags             ; A = terrain_flags[type]
+ and #TF_DESTRUCT
+ beq :notarget
+ lda #$FF                   ; FR_SQUARE
+ sta net_tgt
+ lda cur_x
+ sta ng_fire_x
+ lda cur_y
+ sta ng_fire_y
+:send
  lda sel_unit
  ldx net_tgt
  jsr net_send_fire
@@ -239,6 +257,8 @@ eng_net_send_fire
  sec
  rts
 :notarget
+ rep #$30
+ MX %00
  clc
  rts
 
@@ -675,6 +695,16 @@ do_move
  MX %00
  jsr is_net_mode           ; network game: send C_MOVE, let the server answer
  bcc :local
+ sep #$20                  ; enforce the per-turn move cap for feedback (the
+ MX %10                    ; server also caps; moves_used is the server's count)
+ lda moves_used
+ cmp opt_moves_per_turn
+ rep #$20
+ MX %00
+ bcc :cansend
+ lda #s_r_no_moves         ; "NO MOVES LEFT THIS TURN"
+ jmp set_msg
+:cansend
  jsr eng_net_send_move
  lda #MODE_SELECT
  sta mode
@@ -706,12 +736,12 @@ do_fire
  MX %00
  jsr is_net_mode           ; network game: send C_FIRE at the unit under the cursor
  bcc :local
- jsr eng_net_send_fire
+ jsr eng_net_send_fire     ; fires the unit there, else the destructible square
  bcs :sent
- lda #s_no_unit_here       ; square shots are not networked in v1
+ lda #s_no_unit_here       ; open ground: nothing to shoot
  jmp set_msg
 :sent
- lda #s_moved
+ lda #s_fired              ; shot sent; the server answers with the result
  jmp set_msg
 :local
  lda sel_unit
@@ -2683,6 +2713,8 @@ s_no_unit_here  asc 'NO UNIT THERE'
 s_not_yours     asc 'NOT YOUR UNIT'
                 dfb 0
 s_moved         asc 'MOVED'
+                dfb 0
+s_fired         asc 'FIRING...'
                 dfb 0
 s_turn_over     asc 'TURN OVER'
                 dfb 0

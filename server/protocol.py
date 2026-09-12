@@ -311,18 +311,23 @@ class Move:
 
 @dataclass
 class Fire:
+    """C_FIRE: attacker fires at target_id, or at square (target_x,target_y)
+    when target_id == 0xFF (a shot at destructible terrain)."""
     match_id: int
     action_id: int
     attacker_id: int
     target_id: int
+    target_x: int = 0
+    target_y: int = 0
 
     def encode(self) -> bytes:
-        return struct.pack("<IHBB", self.match_id, self.action_id,
-                           self.attacker_id, self.target_id)
+        return struct.pack("<IHBBBB", self.match_id, self.action_id,
+                           self.attacker_id, self.target_id,
+                           self.target_x, self.target_y)
 
     @classmethod
     def decode(cls, p: bytes) -> "Fire":
-        return cls(*struct.unpack("<IHBB", p))
+        return cls(*struct.unpack("<IHBBBB", p))
 
 
 @dataclass

@@ -164,8 +164,12 @@ class Match:
                                                msg.dest_x, msg.dest_y)
                 await self.broadcast(result(S.MV_OK, events))
             elif t == P.C_FIRE:
-                outcome, events = self.state.apply_fire(sess.side,
-                                                        msg.attacker_id, msg.target_id)
+                if msg.target_id == S.FR_SQUARE:        # shot at a tree/bridge square
+                    outcome, events = self.state.apply_fire_square(
+                        sess.side, msg.attacker_id, msg.target_x, msg.target_y)
+                else:
+                    outcome, events = self.state.apply_fire(
+                        sess.side, msg.attacker_id, msg.target_id)
                 await self.broadcast(result(S.FR_OK, events))
             elif t == P.C_END_TURN:
                 events = self.state.end_turn()
