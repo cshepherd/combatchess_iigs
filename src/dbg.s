@@ -100,6 +100,7 @@ dbg_init
  sta sel_unit
  stz quit
  stz over_shown
+ stz opp_lost_shown
  lda #$FFFF
  sta last_sec
  sta turn_last            ; != any side, so the first turn's fanfare plays
@@ -130,6 +131,7 @@ dbg_run
  MX %00
 :loop
  jsr net_poll_maybe        ; in a network game: apply the server's snapshots
+ jsr net_status_check      ; surface an opponent disconnect / return
  jsr anim_check            ; slide a unit that just moved, before its square is drawn
  jsr shot_check            ; fly a shot that was just fired, then explode on a hit
  jsr turn_check            ; a fanfare when the side to move changes
@@ -188,6 +190,33 @@ net_poll_maybe
 :out
  rep #$30
  MX %00
+ rts
+
+*----------------------------------------------------------
+* net_status_check - once a frame in a net game, watch the
+* opponent-lost flag netloop maintains from S_ERROR / the
+* reconnect nudge, and announce a drop or a return on the
+* message line the first time each happens (so the client no
+* longer just freezes when the opponent goes away). The board
+* HUD's opponent line also shows OFFLINE while it is set.
+*----------------------------------------------------------
+net_status_check
+ MX %00
+ jsr is_net_mode
+ bcc :out                  ; local game: nothing to watch
+ lda nl_opp_lost
+ and #$00FF
+ cmp opp_lost_shown
+ beq :out                  ; no change since last frame
+ sta opp_lost_shown
+ and #$00FF
+ bne :lost
+ lda #s_opp_back
+ jmp set_msg
+:lost
+ lda #s_opp_lost
+ jmp set_msg
+:out
  rts
 
 * is_net_mode - carry set if this is a network game.
@@ -2756,6 +2785,10 @@ s_fired         asc 'FIRING...'
                 dfb 0
 s_surrendering  asc 'SURRENDERING...'
                 dfb 0
+s_opp_lost      asc 'OPPONENT DISCONNECTED...'
+                dfb 0
+s_opp_back      asc 'OPPONENT RECONNECTED'
+                dfb 0
 s_turn_over     asc 'TURN OVER'
                 dfb 0
 s_paused        asc 'PAUSED  (P TO RESUME)'
@@ -2877,6 +2910,7 @@ sel_tmp    ds 2
 dirty      ds 2
 quit       ds 2
 over_shown ds 2
+opp_lost_shown ds 2        ; last-seen nl_opp_lost, for the drop/return edge
 shown_side ds 2
 last_sec   ds 2
 turn_last  ds 2            ; side to move at the last turn_check (fanfare edge)
@@ -2899,7 +2933,9 @@ anim_sub     ds 2
 anim_bg_addr ds 2
 anim_ptr     ds 2
 anim_rows    ds 2
-anim_buf     ds 128        ; 16 x 16 background save (8 bytes x 16 rows)
+anim_buf     =  $0F00       ; 16x16 background save, in free bank-0 RAM (the tail of
+*                             the ProDOS I/O buffer, unused during gameplay) so the
+*                             GAME image stays under $BEFF: $0F00-$0F7F
 expl_cell    ds 2
 expl_i       ds 2
 an_fx        ds 1
@@ -2912,7 +2948,7 @@ shot_fp      ds 2
 shot_bg_addr ds 2
 shot_sub     ds 2
 shot_miss    ds 2
-shot_buf     ds 32         ; 4 x 8 background save (4 bytes x 8 rows)
+shot_buf     =  $0F80       ; 4x8 background save, free bank-0 RAM: $0F80-$0F9F
 clk_top      ds 2
 msg_ptr    ds 2
 key_code   ds 2
@@ -2937,4 +2973,4 @@ tmp2       ds 2
 tmp_a      ds 2
 tmp_h      ds 2
 glyph_buf  ds 2
-msg_buf    ds 64
+msg_buf    =  $0FA0       ; composed message copy, free bank-0 RAM: $0FA0-$0FDF

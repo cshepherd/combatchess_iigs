@@ -26,6 +26,7 @@ net_game_start
             stz   nl_matched
             stz   nl_lost
             stz   nl_recon_tries
+            stz   nl_opp_lost
             stz   nl_action+0
             stz   nl_action+1
             jsr   net_status_reset            ; header on the (black) setup screen
@@ -302,9 +303,13 @@ net_poll_step
             beq   :state
             cmp   #NET_S_GAME_OVER
             beq   :over
-            rts
-:state                                       ; payload IS the snapshot
-            lda   #<proto_payload
+            cmp   #NET_S_ERROR
+            bne   :nomsg
+            jmp   :err                        ; (too far for a branch)
+:nomsg      rts
+:state                                       ; payload IS the snapshot (a state push;
+            stz   nl_opp_lost                 ; the server sends one to nudge our view
+            lda   #<proto_payload             ; when the opponent reconnects -> back
             sta   NSP
             lda   #>proto_payload
             sta   NSP+1
@@ -367,6 +372,12 @@ net_poll_step
             lda   #1
             sta   nl_over
             rts
+:err        lda   proto_payload+0            ; S_ERROR: code, len, message
+            cmp   #NET_ERR_OPP_LOST
+            bne   :none
+            lda   #1
+            sta   nl_opp_lost                 ; opponent dropped (grace running); the
+            sta   nl_dirty                     ; game loop shows it until they return
 :none       rts
 
 * nl_check_link: once a match is live, watch socket 0's status each frame; if
@@ -688,6 +699,7 @@ nl_over      dfb   0
 nl_matched   dfb   0                  ; a match is live (token stored) -> watch the link
 nl_lost      dfb   0                  ; reconnect gave up; stop retrying
 nl_recon_tries dfb 0                  ; reconnect attempts since the link dropped
+nl_opp_lost  dfb   0                  ; opponent dropped (grace running); HUD shows it
 nl_dirty     dfb   0
 nl_action    dfb   0,0
 nl_to        dfb   0,0

@@ -31,6 +31,7 @@ STATUS_TANK_BLK  = $0000
 STATUS_SLOT_BG   = 8       ; grey, the bitmap's background slot
 STATUS_INK       = COL_BLACK
 STATUS_HEAD_Y    = 90
+STATUS_NET_Y     = 100     ; the net opponent line, between the header and the roster
 STATUS_ROW_Y     = 110
 STATUS_ROW_STEP  = 9
 STATUS_HUD_TOP   = 184     ; the two status lines sit at the very bottom here
@@ -148,6 +149,7 @@ status_draw
  ldx #X_NAME
  ldy #STATUS_HEAD_Y
  jsr draw_cstr
+ jsr st_net_line           ; in a net game: VS <opponent>  (CONNECTED / RECONNECTING)
  ldx #0
 :head
  lda st_heads,x            ; string, x, y; a zero string ends
@@ -231,6 +233,44 @@ status_draw
  jmp :row
 :rows_done
  jmp draw_hud              ; both status lines at the bottom, as the original
+
+*----------------------------------------------------------
+* st_net_line - in a network game, one line under the header:
+* the opponent's name and whether the link is live or the
+* opponent has dropped and we are waiting for them. Nothing in
+* a local hot-seat game. Native 16-bit.
+*----------------------------------------------------------
+st_net_line
+ MX %00
+ jsr is_net_mode
+ bcc :out                  ; local game: no opponent
+ lda #STATUS_INK
+ ldx #STATUS_SLOT_BG
+ jsr set_colors
+ jsr lb_reset
+ lda #s_st_vs
+ jsr lb_str
+ lda #nm_name              ; opponent name, NUL-padded from MATCH_START
+ jsr lb_str
+ lda #s_st_sp2
+ jsr lb_str
+ lda nl_opp_lost
+ and #$00FF
+ beq :live
+ lda #s_st_recon
+ bra :state
+:live
+ lda #s_st_live
+:state
+ jsr lb_str
+ jsr lb_end
+ lda #line_buf
+ sta str_ptr
+ ldx #X_NAME
+ ldy #STATUS_NET_Y
+ jmp draw_cstr
+:out
+ rts
 
 * st_num - A = value, X = x, Y = width: the number in that
 * many digits with leading zeros, on the current row.
@@ -322,6 +362,14 @@ s_st_game    asc 'GAME'
 s_st_sqr     asc 'SQR'
              dfb 0
 s_st_dmg     asc 'DMG'
+             dfb 0
+s_st_vs      asc 'VS '
+             dfb 0
+s_st_sp2     asc '  '
+             dfb 0
+s_st_live    asc '(CONNECTED)'
+             dfb 0
+s_st_recon   asc '(RECONNECTING)'
              dfb 0
 
 * Column heads: string, x, y.

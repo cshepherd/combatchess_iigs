@@ -30,6 +30,8 @@ NET_C_PING        = $20
 NET_S_PONG        = $21
 NET_C_RECONNECT   = $30
 NET_S_RECONNECT_RESULT = $31
+NET_S_ERROR       = $7F
+NET_ERR_OPP_LOST  = 10                 ; S_ERROR code: opponent dropped, grace running
 NET_RC_OK         = $00            ; S_RECONNECT_RESULT result codes
 
 * Matchmaking modes + client kinds (protocol.py).
