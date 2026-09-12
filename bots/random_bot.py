@@ -106,14 +106,15 @@ async def run(host="127.0.0.1", port=1984, name="RandomBot", max_actions=2000,
                     await act_on(_action_result_state(frame.payload))
                 elif t == P.S_GAME_OVER:
                     reason, winner = struct.unpack("<BB", frame.payload)
-                    return {"reason": reason, "winner": winner, "actions": actions}
+                    return {"reason": reason, "winner": winner,
+                            "actions": actions, "side": my_side}
     finally:
         writer.close()
         try:
             await writer.wait_closed()
         except (ConnectionResetError, OSError):
             pass
-    return {"reason": None, "winner": None, "actions": actions}
+    return {"reason": None, "winner": None, "actions": actions, "side": my_side}
 
 
 async def _main():

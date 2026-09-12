@@ -173,6 +173,7 @@ class Server:
         self.port = port
         self.sessions = set()
         self.waiting: list[Session] = []      # simple FIFO matchmaking queue
+        self.board = int(os.environ.get("CC_BOARD", DEFAULT_BOARD))
 
     async def handle_conn(self, reader, writer):
         sess = Session(self, reader, writer)
@@ -246,14 +247,19 @@ class Server:
             b = self.waiting.pop(0)
             if a.closed or b.closed:
                 continue
-            match = Match(self, a, b)
+            match = Match(self, a, b, board=self.board)
             await match.start()
 
     async def _spawn_bot(self):
-        # import lazily so the server runs even without the bot module
-        from bots import random_bot
+        # import lazily so the server runs even without the bot module. CC_BOT
+        # selects the opponent (default random); "greedy" pairs the greedy bot.
         host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host
-        asyncio.create_task(random_bot.run(host, self.port, name="RandomBot"))
+        if os.environ.get("CC_BOT", "random").lower().startswith("greedy"):
+            from bots import greedy_bot
+            asyncio.create_task(greedy_bot.run(host, self.port, name="GreedyBot"))
+        else:
+            from bots import random_bot
+            asyncio.create_task(random_bot.run(host, self.port, name="RandomBot"))
         # give the bot a moment to connect+hello+queue, then match
         await asyncio.sleep(0.2)
         await self._try_match()
