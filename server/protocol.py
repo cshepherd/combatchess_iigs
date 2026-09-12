@@ -339,6 +339,37 @@ class SimpleAction:
         return cls(*struct.unpack("<IH", p))
 
 
+# S_RECONNECT_RESULT result codes.
+RC_OK = 0
+RC_BAD_TOKEN = 1        # unknown / wrong token
+RC_NO_MATCH = 2         # match_id not found (expired / never existed)
+RC_GAME_OVER = 3        # the match already ended
+
+
+@dataclass
+class Reconnect:
+    """C_RECONNECT (spec 24.3): resume a match after a dropped connection.
+    The token is a per-match, per-player bearer credential from S_MATCH_START.
+    last_action_id / last_state_serial let the server tell how far behind the
+    client is (it always re-sends the full state, so they are advisory)."""
+    match_id: int
+    token: bytes                       # exactly 16 bytes
+    last_action_id: int = 0
+    last_state_serial: int = 0
+
+    def encode(self) -> bytes:
+        assert len(self.token) == 16
+        return (struct.pack("<I", self.match_id) + self.token +
+                struct.pack("<HI", self.last_action_id, self.last_state_serial))
+
+    @classmethod
+    def decode(cls, p: bytes) -> "Reconnect":
+        (match_id,) = struct.unpack_from("<I", p, 0)
+        token = bytes(p[4:20])
+        last_action_id, last_serial = struct.unpack_from("<HI", p, 20)
+        return cls(match_id, token, last_action_id, last_serial)
+
+
 def match_start_frame(match_id, assigned_side, board_number, moves_per_turn,
                       shoot_option, starting_side, red_tanks, red_cars,
                       black_tanks, black_cars, red_time_ms, black_time_ms,
@@ -386,3 +417,15 @@ def game_over_frame(reason, winner, seq: int = 0) -> bytes:
 def error_frame(code, message: str = "", seq: int = 0) -> bytes:
     raw = message.encode("ascii")[:255]
     return pack_frame(S_ERROR, struct.pack("<BB", code, len(raw)) + raw, seq)
+
+
+def reconnect_frame(rc: Reconnect, seq: int = 0) -> bytes:
+    return pack_frame(C_RECONNECT, rc.encode(), seq)
+
+
+def reconnect_result_frame(result_code, assigned_side, state_blob: bytes = b"",
+                           seq: int = 0) -> bytes:
+    """S_RECONNECT_RESULT: u8 result_code, u8 assigned_side, then (on RC_OK)
+    the full snapshot so the client re-syncs the board and clocks."""
+    hdr = struct.pack("<BB", result_code, assigned_side & 0xFF)
+    return pack_frame(S_RECONNECT_RESULT, hdr + state_blob, seq)

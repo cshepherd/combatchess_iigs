@@ -30,6 +30,12 @@ import rules as R
 SERVER_NAME = "CombatChess"
 DEFAULT_BOARD = 1
 DEFAULT_MOVES = 5
+# Reconnect grace: how long (seconds) a match survives a human's dropped
+# connection before the opponent wins by abandonment (spec 24.2). Tests set
+# CC_GRACE low; bots never get a grace (they cannot reconnect).
+DEFAULT_GRACE = float(os.environ.get("CC_GRACE", "120"))
+SIDE_NAME = {R.SIDE_RED: "RED", R.SIDE_BLACK: "BLACK"}
+ERR_OPPONENT_LOST = 10        # S_ERROR code: your opponent dropped (grace running)
 
 
 def _stamp():
@@ -69,11 +75,17 @@ class Session:
             self.closed = True
 
     async def close(self):
+        # A dropped peer often leaves a half-sent frame in the transport; a
+        # graceful close would try to flush it and raise BrokenPipeError, so
+        # abort (discard the buffer, no flush) rather than close+wait_closed.
         self.closed = True
         try:
+            self.writer.transport.abort()
+        except Exception:
+            pass
+        try:
             self.writer.close()
-            await self.writer.wait_closed()
-        except (ConnectionResetError, OSError):
+        except Exception:
             pass
 
 
@@ -89,11 +101,17 @@ class Match:
         red.match = black.match = self
         red.side, black.side = R.SIDE_RED, R.SIDE_BLACK
         self.state = S.GameState(board, moves_per_turn=moves)
+        # Reconnect bookkeeping (spec 24): a per-player bearer token, whether
+        # each side is currently connected, and any running grace timer.
+        self.tokens = {R.SIDE_RED: secrets.token_bytes(16),
+                       R.SIDE_BLACK: secrets.token_bytes(16)}
+        self.connected = {R.SIDE_RED: True, R.SIDE_BLACK: True}
+        self.grace_tasks = {}
         log(f"match {self.match_id}: {red.name!r}(RED) vs {black.name!r}(BLACK) "
             f"board {board}")
 
     async def start(self):
-        token = secrets.token_bytes(16)
+        self.server.register_match(self)
         blob = self.state.serialize()
         for side, sess in self.players.items():
             frame = P.match_start_frame(
@@ -101,7 +119,7 @@ class Match:
                 self.state.moves_per_turn, self.state.shoot_option,
                 self.state.active_side, 3, 5, 3, 5,
                 self.state.red_remaining_ms, self.state.black_remaining_ms,
-                token, blob, seq=sess.out_seq)
+                self.tokens[side], blob, seq=sess.out_seq)
             sess.out_seq += 1
             await sess.send(frame)
 
@@ -165,6 +183,7 @@ class Match:
                 await s2.send(P.game_over_frame(self.state.over_reason, winner))
             log(f"match {self.match_id}: over reason={self.state.over_reason} "
                 f"winner={self.state.winner}")
+            self.server.unregister_match(self)      # tokens/grace no longer valid
 
 
 class Server:
@@ -174,6 +193,9 @@ class Server:
         self.sessions = set()
         self.waiting: list[Session] = []      # simple FIFO matchmaking queue
         self.board = int(os.environ.get("CC_BOARD", DEFAULT_BOARD))
+        self.grace_s = DEFAULT_GRACE
+        self.matches = {}                     # match_id -> Match (live matches)
+        self.tokens = {}                      # reconnect token -> (Match, side)
 
     async def handle_conn(self, reader, writer):
         sess = Session(self, reader, writer)
@@ -186,23 +208,105 @@ class Server:
                     break
                 for frame in sess.parser.feed(data):
                     await self.dispatch(sess, frame)
-        except (ConnectionResetError, asyncio.IncompleteReadError, P.ProtocolError) as e:
+        except (OSError, asyncio.IncompleteReadError, P.ProtocolError) as e:
+            # OSError covers ConnectionReset/BrokenPipe -- a socket error on
+            # this connection (read, or a pending write surfacing here) is a
+            # disconnect; the finally drops the session.
             log(f"session {sess.session_id} error: {e}")
         finally:
             await self.drop(sess)
+
+    def other_side(self, side):
+        return R.SIDE_BLACK if side == R.SIDE_RED else R.SIDE_RED
+
+    def register_match(self, m):
+        self.matches[m.match_id] = m
+        for side, tok in m.tokens.items():
+            self.tokens[tok] = (m, side)
+
+    def unregister_match(self, m):
+        self.matches.pop(m.match_id, None)
+        for tok in list(m.tokens.values()):
+            self.tokens.pop(tok, None)
+        for task in m.grace_tasks.values():
+            task.cancel()
+        m.grace_tasks.clear()
 
     async def drop(self, sess):
         self.sessions.discard(sess)
         if sess in self.waiting:
             self.waiting.remove(sess)
-        if sess.match and not sess.match.state.game_over:
-            # opponent wins by forfeit
-            m = sess.match
-            other = m.players[R.SIDE_BLACK if sess.side == R.SIDE_RED else R.SIDE_RED]
-            m.state.surrender(sess.side)
-            await other.send(P.game_over_frame(S.OVER_SURRENDER, other.side))
+        m = sess.match
+        # Only the CURRENT session of a live match matters; a stale session
+        # already replaced by a reconnect just goes away quietly.
+        if m and not m.state.game_over and m.players.get(sess.side) is sess:
+            if sess.kind == P.CLIENT_HUMAN:
+                await self._enter_grace(m, sess.side)   # keep the match alive
+            else:
+                await self._forfeit(m, sess.side)       # bots cannot reconnect
         await sess.close()
         log(f"- close session {sess.session_id}")
+
+    async def _forfeit(self, m, side):
+        """Immediate loss for `side` -- a bot dropped, or grace is disabled."""
+        m.state.surrender(side)
+        other = m.players[self.other_side(side)]
+        await other.send(P.game_over_frame(S.OVER_SURRENDER, other.side))
+        self.unregister_match(m)
+
+    async def _enter_grace(self, m, side):
+        """A human dropped mid-match (spec 24.2): keep the match and its token,
+        tell the opponent, and start the abandonment timer. Clocks are nominal
+        on the server, so the restored S_STATE resumes them on reconnect."""
+        m.connected[side] = False
+        log(f"match {m.match_id}: {SIDE_NAME[side]} disconnected; "
+            f"grace {self.grace_s:g}s")
+        other = m.players[self.other_side(side)]
+        await other.send(P.error_frame(ERR_OPPONENT_LOST, "opponent disconnected"))
+        m.grace_tasks[side] = asyncio.create_task(self._grace_expire(m, side))
+
+    async def _grace_expire(self, m, side):
+        try:
+            await asyncio.sleep(self.grace_s)
+        except asyncio.CancelledError:
+            return                                       # reconnected in time
+        if m.state.game_over or m.connected[side]:
+            return
+        log(f"match {m.match_id}: {SIDE_NAME[side]} grace expired -> abandonment")
+        m.state.surrender(side)                          # loses by abandonment
+        other = m.players[self.other_side(side)]
+        await other.send(P.game_over_frame(S.OVER_SURRENDER, other.side))
+        self.unregister_match(m)
+
+    async def handle_reconnect(self, sess, frame):
+        """C_RECONNECT (spec 24.3): a fresh connection presents a match token to
+        take over a dropped player's slot; reply S_RECONNECT_RESULT + full state."""
+        rc = P.Reconnect.decode(frame.payload)
+        entry = self.tokens.get(bytes(rc.token))
+        if entry is None:
+            await sess.send(P.reconnect_result_frame(P.RC_BAD_TOKEN, 0))
+            log(f"session {sess.session_id}: reconnect rejected (bad token)")
+            return
+        m, side = entry
+        if m.match_id != rc.match_id:
+            await sess.send(P.reconnect_result_frame(P.RC_BAD_TOKEN, 0))
+            return
+        if m.state.game_over:
+            await sess.send(P.reconnect_result_frame(P.RC_GAME_OVER, side))
+            return
+        m.players[side] = sess                           # replace the dead link
+        sess.match = m
+        sess.side = side
+        sess.hello_done = True
+        m.connected[side] = True
+        task = m.grace_tasks.pop(side, None)
+        if task:
+            task.cancel()
+        log(f"match {m.match_id}: {SIDE_NAME[side]} reconnected (session {sess.session_id})")
+        await sess.send(P.reconnect_result_frame(P.RC_OK, side, m.state.serialize()))
+        other = m.players[self.other_side(side)]
+        if other is not sess:                            # nudge the opponent's view
+            await other.send(P.state_frame(m.state.serialize()))
 
     async def dispatch(self, sess: Session, frame: P.Frame):
         t = frame.msg_type
@@ -225,6 +329,8 @@ class Server:
         elif t == P.C_PING:
             ping = P.Ping.decode(frame.payload)
             await sess.send(P.pong_frame(P.Pong(ping.nonce), seq=frame.seq))
+        elif t == P.C_RECONNECT:
+            await self.handle_reconnect(sess, frame)
         elif t in (P.C_MOVE, P.C_FIRE, P.C_END_TURN, P.C_SURRENDER):
             if sess.match:
                 await sess.match.handle_action(sess, frame)
