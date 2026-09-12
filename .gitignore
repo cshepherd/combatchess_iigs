@@ -42,3 +42,4 @@ reference/raw/effects/*.dat
 src/nettest
 src/nettest_wrap
 src/proto_test
+src/netgame_test

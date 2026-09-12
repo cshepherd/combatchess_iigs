@@ -74,6 +74,26 @@ FIXTURES = [
         lambda: P.Pong(nonce=0x11223344),
         P.Pong.decode,
     ),
+    (
+        "queue_bot",
+        P.C_QUEUE_JOIN, 3,
+        lambda: P.QueueJoin(mode=P.QUEUE_BOT),
+        P.QueueJoin.decode,
+    ),
+    (
+        "move",
+        P.C_MOVE, 0x0007,
+        lambda: P.Move(match_id=0x01020304, action_id=0x0009,
+                       unit_id=5, dest_x=9, dest_y=3),
+        P.Move.decode,
+    ),
+    (
+        "fire",
+        P.C_FIRE, 0x0008,
+        lambda: P.Fire(match_id=0x01020304, action_id=0x000A,
+                       attacker_id=5, target_id=12),
+        P.Fire.decode,
+    ),
 ]
 
 # Map message type -> the frame builder that adds the header.
@@ -82,6 +102,9 @@ FRAME_OF = {
     P.S_WELCOME: P.welcome_frame,
     P.C_PING: P.ping_frame,
     P.S_PONG: P.pong_frame,
+    P.C_QUEUE_JOIN: lambda m, seq=0: P.pack_frame(P.C_QUEUE_JOIN, m.encode(), seq),
+    P.C_MOVE: lambda m, seq=0: P.pack_frame(P.C_MOVE, m.encode(), seq),
+    P.C_FIRE: lambda m, seq=0: P.pack_frame(P.C_FIRE, m.encode(), seq),
 }
 
 
@@ -143,6 +166,38 @@ def main() -> int:
         entries.append(manifest_entry(name, msg_type, seq, frame, msg))
         print(f"{name:14s} {P.TYPE_NAMES.get(msg_type):14s} "
               f"{len(frame):3d}B  {frame.hex()}")
+
+    # S_STATE fixture: the deterministic board-1 initial snapshot, wrapped in
+    # a frame. Used to validate the IIGS S_STATE parser network-free.
+    import state as ST
+    g = ST.GameState(1, moves_per_turn=5)
+    blob = g.serialize()
+    sframe = P.state_frame(blob, seq=1)
+    spath = os.path.join(OUT_DIR, "state_board1.bin")
+    if args.check:
+        with open(spath, "rb") as f:
+            if f.read() != sframe:
+                print("MISMATCH: state_board1.bin differs", file=sys.stderr)
+                return 1
+    else:
+        old = open(spath, "rb").read() if os.path.exists(spath) else None
+        if old != sframe:
+            with open(spath, "wb") as f:
+                f.write(sframe)
+            changed = True
+    snap = ST.parse_snapshot(blob)
+    entries.append({
+        "name": "state_board1", "type": P.S_STATE, "type_name": "S_STATE",
+        "seq": 1, "payload_len": len(blob), "frame_len": len(sframe),
+        "fields": {"active_side": snap["active_side"], "unit_count": len(snap["units"]),
+                   "state_serial": snap["state_serial"],
+                   "units": [[u["id"], u["cls"], u["side"], u["x"], u["y"], u["hp"],
+                              u["fuel"], u["ammo"], u["terr_hp"], u["flags"]]
+                             for u in snap["units"]]},
+        "hex": sframe.hex(),
+    })
+    print(f"{'state_board1':14s} {'S_STATE':14s} {len(sframe):3d}B  "
+          f"({len(snap['units'])} units, {ST.R.BOARD_CELLS}B terrain)")
 
     manifest = {
         "protocol_version": P.PROTOCOL_VERSION,
