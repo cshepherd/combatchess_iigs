@@ -114,12 +114,13 @@ class Match:
         self.server.register_match(self)
         blob = self.state.serialize()
         for side, sess in self.players.items():
+            opp = self.players[R.SIDE_BLACK if side == R.SIDE_RED else R.SIDE_RED]
             frame = P.match_start_frame(
                 self.match_id, side, self.state.board_number,
                 self.state.moves_per_turn, self.state.shoot_option,
                 self.state.active_side, 3, 5, 3, 5,
                 self.state.red_remaining_ms, self.state.black_remaining_ms,
-                self.tokens[side], blob, seq=sess.out_seq)
+                self.tokens[side], blob, opponent_name=opp.name, seq=sess.out_seq)
             sess.out_seq += 1
             await sess.send(frame)
 

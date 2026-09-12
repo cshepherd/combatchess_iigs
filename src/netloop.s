@@ -140,7 +140,13 @@ net_game_start
             jmp   :failest
 :hcont      jsr   net_delay
             bra   :hloop
-:matched    lda   #<s_net_match               ; a game was found
+:matched    ldx   #0                          ; opponent name (@ +37) -> the message
+:nmc        lda   proto_payload+37,x
+            sta   nm_name,x
+            inx
+            cpx   #16
+            bne   :nmc
+            lda   #<s_net_match               ; "MATCHED WITH <name>"
             ldx   #>s_net_match
             jsr   net_status
             lda   proto_payload+0            ; match_id -> ng_match_id
@@ -165,10 +171,10 @@ net_game_start
             bne   :tkc
             lda   #1                          ; a match is live: enable reconnect
             sta   nl_matched
-* decode + apply the embedded snapshot (skip the 37-byte prefix)
+* decode + apply the embedded snapshot (skip hdr 21 + token 16 + name 16 = 53)
             clc
             lda   #<proto_payload
-            adc   #37
+            adc   #53
             sta   NSP
             lda   #>proto_payload
             adc   #0
@@ -242,8 +248,9 @@ s_net_estab  asc   'CONNECTED'
              dfb   0
 s_net_wait   asc   'WAITING FOR OPPONENT...'
              dfb   0
-s_net_match  asc   'MATCHED WITH COMPUTER'
-             dfb   0
+s_net_match  asc   'MATCHED WITH '        ; 13 chars, then the opponent name:
+nm_name      ds    16                     ; copied from MATCH_START (+37, NUL-padded)
+             dfb   0                       ; safety terminator if the name fills 16
 s_net_start  asc   'STARTING GAME...'
              dfb   0
 s_net_nocard asc   'NO UTHERNET CARD FOUND'

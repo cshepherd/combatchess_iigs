@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 import protocol as P
 import state as S
 
-# S_MATCH_START fixed header (spec 12): <IBBBBBBBBBII> + 16-byte token.
+# S_MATCH_START (spec 12): <IBBBBBBBBBII> header + 16-byte token +
+# 16-byte opponent name + serialized state.
 _MS_HDR = struct.calcsize("<IBBBBBBBBBII")
 
 
@@ -32,7 +33,7 @@ def _match_start_state(payload: bytes):
     # decode the fields we need explicitly
     (match_id, assigned_side, board, mpt, shoot, start,
      rt, rc, bt, bc, r_ms, b_ms) = struct.unpack_from("<IBBBBBBBBBII", payload, 0)
-    blob = payload[_MS_HDR + 16:]
+    blob = payload[_MS_HDR + 16 + 16:]      # skip token + 16-byte opponent name
     return match_id, assigned_side, mpt, blob
 
 

@@ -370,18 +370,25 @@ class Reconnect:
         return cls(match_id, token, last_action_id, last_serial)
 
 
+MATCH_NAME_LEN = 16       # opponent-name field in S_MATCH_START: MAX_NAME + NUL
+
+
 def match_start_frame(match_id, assigned_side, board_number, moves_per_turn,
                       shoot_option, starting_side, red_tanks, red_cars,
                       black_tanks, black_cars, red_time_ms, black_time_ms,
                       reconnect_token: bytes, state_blob: bytes,
-                      seq: int = 0) -> bytes:
-    """S_MATCH_START (spec 12): fixed header fields + serialized state."""
+                      opponent_name: str = "", seq: int = 0) -> bytes:
+    """S_MATCH_START (spec 12): fixed header + reconnect token + a fixed
+    16-byte NUL-padded opponent name + the serialized state."""
     assert len(reconnect_token) == 16
     hdr = struct.pack("<IBBBBBBBBBII", match_id, assigned_side, board_number,
                       moves_per_turn, shoot_option, starting_side,
                       red_tanks, red_cars, black_tanks, black_cars,
                       red_time_ms, black_time_ms)
-    return pack_frame(S_MATCH_START, hdr + reconnect_token + state_blob, seq)
+    name = opponent_name.encode("ascii", "ignore")[:MAX_NAME]
+    name = name + b"\x00" * (MATCH_NAME_LEN - len(name))
+    return pack_frame(S_MATCH_START,
+                      hdr + reconnect_token + name + state_blob, seq)
 
 
 def encode_events(events) -> bytes:
