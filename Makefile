@@ -68,7 +68,7 @@ out/%: src/%.s $(SHARED)
 	cd src && merlin32 -V $*.s
 	mv src/$* out/$*
 
-$(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp $(BINS) out/status_art
+$(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp res/ccc.shr $(BINS) out/status_art
 	mkdir -p out
 	rm -f $(IMGFILE)
 	$(CADIUS) CREATEVOLUME $(IMGFILE) $(VOLNAME) 800KB --quiet
@@ -106,6 +106,11 @@ $(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp $(BINS) out/st
 	cp out/status_art out/SA\#060000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/SA\#060000 --quiet
 	rm out/SA\#060000
+	# The cCc brick-wall boot logo (32 KB raw SHR), loaded into its own bank
+	# at boot; TITLE fades it in and out once before the title, on a cold boot.
+	cp res/ccc.shr out/CCC\#060000
+	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/CCC\#060000 --quiet
+	rm out/CCC\#060000
 ifeq ($(INCLUDE_TESTS),1)
 	# Rules self-tests: T on the title screen, or 00/1004g in KEGS.
 	cp out/test out/TEST\#062000

@@ -191,7 +191,7 @@ res_mvn mvn $00,$00        ; $00/2000 -> bank/0000 (dest byte self-modified)
  inx
  inx
  inx
- cpx #$0C                  ; 4 entries * 3 bytes
+ cpx #$0F                  ; 5 entries * 3 bytes
  bcc :loop
 :ret
  rts
@@ -209,6 +209,8 @@ res_tab
  dfb $04
  da statusart_path
  dfb STATUS_ART_BANK       ; the status plaque bitmap (GAME reads it from here)
+ da ccc_path
+ dfb CCC_BANK              ; the cCc boot-logo bitmap (TITLE fades it at cold boot)
 
 mli_error
  sta mli_errcode           ; visible in a debugger after the QUIT
@@ -257,6 +259,7 @@ snd_path      str 'SOUNDS'
 ntpplay_path  str 'NT'
 ntpmod_path   str 'TM'
 statusart_path str 'SA'
+ccc_path      str 'CCC'
 
 * The bootstrap copies exactly one page. Fail the build if
 * the launcher ever grows past $10FF.

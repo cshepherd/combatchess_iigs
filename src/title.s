@@ -36,6 +36,7 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   bne :ready
   jsr toolbox_init
   inc tb_inited
+  inc show_splash           ; cold boot only: run the logo splash this pass
 :ready
   lda cfg_valid
   cmp #CFG_MAGIC
@@ -47,6 +48,10 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   rep $30
   MX %00
   jsr shr_init
+  lda show_splash           ; cold boot: fade the cCc logo in and out first
+  beq :nosplash
+  jsr ccc_splash
+:nosplash
   lda #TEXT_OPAQUE
   jsr set_text_mode         ; inverse fields need the cell painted
   jsr title_palette_load
@@ -1097,6 +1102,320 @@ dl_str    ds 2
 fr_pat    ds 2
 fr_off    ds 2
 fr_rows   ds 2
+
+*----------------------------------------------------------
+* ccc_splash - The cold-boot logo. cc.s has loaded the cCc
+* brick-wall image (CCC resource) into CCC_BANK at $xx/0000
+* (raw SHR: pixels at +0, palette at +$7E00). shr_init has
+* SHR + shadowing on; this fades the logo up from black, holds
+* ~2 s, fades it out, and leaves a clean black screen for the
+* title. Native mode, 16-bit M/X in and out. Shown once per
+* cold boot (show_splash), like ddiigs' CCC/DRUGS splashes.
+*----------------------------------------------------------
+ MX %00
+ccc_splash
+* black border for the splash (the title sets white afterwards)
+ sep #$20
+ MX %10
+ ldal $E0C034
+ and #$F0
+ stal $E0C034
+ rep #$20
+ MX %00
+* start from an all-black palette so the fade-in ramps up from
+* nothing (shr_init loaded palette 0; overwrite it)
+ ldx #$01FE
+ lda #$0000
+:clrpal stal $019E00,x
+ dex
+ dex
+ bpl :clrpal
+* copy the logo's pixels + SCBs (CCC_BANK/0000 -> $01/2000,
+* $7E00 bytes = screen $2000-$9DFF). The palette area is left
+* black; fadeIn writes the ramp into it.
+ ldx #$7DFE
+:cpy ldal CCC_SRC,x
+ stal $012000,x
+ dex
+ dex
+ bpl :cpy
+ jsr fadeIn
+ jsr splash_hold
+ jsr fadeOut
+* wipe the logo pixels + SCBs so the title draws on a clean
+* screen (the palette is already black from fadeOut)
+ ldx #$7DFE
+ lda #$0000
+:clrpix stal $012000,x
+ dex
+ dex
+ bpl :clrpix
+ rts
+
+*----------------------------------------------------------
+* splash_hold - hold the fully-faded-in logo for ~2 s (120
+* VBLs). Native, 16-bit M/X.
+*----------------------------------------------------------
+ MX %00
+splash_hold
+ ldx #120
+:hl phx
+ jsr wait_vbl
+ plx
+ dex
+ bne :hl
+ rts
+
+*----------------------------------------------------------
+* fadeIn - ramp all 16 palettes from black to the logo's
+* target palette (CCC_PAL) over 16 VBLs, working the fadeBlack
+* table from step 15 down to 0. Native mode, REP $30. (Adapted
+* from ddiigs title.s; reads the target from CCC_BANK instead
+* of a ZP long pointer.)
+*----------------------------------------------------------
+ mx %00
+fadeIn
+ ldx #0                 ; load the target palette from CCC_BANK/7E00
+:loadTgt
+ ldal CCC_PAL,x
+ sta targetPal,x
+ inx
+ inx
+ cpx #$0200
+ bcc :loadTgt
+
+ lda #15
+ sta :istep             ; start fully black (step 15)
+:istepLoop
+ ldx #0
+:iwordLoop
+ lda targetPal,x
+ sta :iorigWord
+* Blue (bits 0-3)
+ and #$000F
+ asl
+ asl
+ asl
+ asl                    ; * 16
+ clc
+ adc :istep
+ tay
+ sep $20
+ lda fadeBlack,y
+ sta :ifadedB
+ rep $20
+* Green (bits 4-7)
+ lda :iorigWord
+ and #$00F0
+ lsr
+ lsr
+ lsr
+ lsr
+ asl
+ asl
+ asl
+ asl                    ; * 16
+ clc
+ adc :istep
+ tay
+ sep $20
+ lda fadeBlack,y
+ asl
+ asl
+ asl
+ asl                    ; back to bits 4-7
+ ora :ifadedB
+ sta :ifadedGB
+ rep $20
+* Red (bits 8-11)
+ lda :iorigWord
+ and #$0F00
+ xba
+ asl
+ asl
+ asl
+ asl                    ; * 16
+ clc
+ adc :istep
+ tay
+ sep $20
+ lda fadeBlack,y
+ sta :ifadedR
+ rep $20
+* combine $0RGB and store
+ lda :ifadedR
+ and #$000F
+ xba
+ sta :ifadedRGB
+ lda :ifadedGB
+ and #$00FF
+ ora :ifadedRGB
+ stal $019E00,x
+ inx
+ inx
+ cpx #$0200
+ bcc :iwordLoop
+* wait for VBL
+ sep $20
+:ivbl1 bit $C019
+ bmi :ivbl1
+:ivbl2 bit $C019
+ bpl :ivbl2
+ rep $20
+* next step (15 -> 0, done when negative)
+ lda :istep
+ sec
+ sbc #1
+ sta :istep
+ bpl :jstep
+ rts
+:jstep jmp :istepLoop
+:istep dw 0
+:iorigWord dw 0
+:ifadedB dfb 0
+:ifadedGB dfb 0
+:ifadedR dfb 0
+:ifadedRGB dw 0
+
+*----------------------------------------------------------
+* fadeOut - ramp all 16 palettes (256 words at $019E00) from
+* their current values to black over 16 VBLs. Native, REP $30.
+* (Verbatim from ddiigs title.s.)
+*----------------------------------------------------------
+ mx %00
+fadeOut
+ ldx #$01FE             ; save the current palette to origPal
+:save
+ ldal $019E00,x
+ sta origPal,x
+ dex
+ dex
+ bpl :save
+
+ lda #0
+ sta :step
+:stepLoop
+ ldx #0
+:wordLoop
+ lda origPal,x
+ sta :origWord
+* Blue
+ and #$000F
+ asl
+ asl
+ asl
+ asl
+ clc
+ adc :step
+ tay
+ sep $20
+ lda fadeBlack,y
+ sta :fadedB
+ rep $20
+* Green
+ lda :origWord
+ and #$00F0
+ lsr
+ lsr
+ lsr
+ lsr
+ asl
+ asl
+ asl
+ asl
+ clc
+ adc :step
+ tay
+ sep $20
+ lda fadeBlack,y
+ asl
+ asl
+ asl
+ asl
+ ora :fadedB
+ sta :fadedGB
+ rep $20
+* Red
+ lda :origWord
+ and #$0F00
+ xba
+ asl
+ asl
+ asl
+ asl
+ clc
+ adc :step
+ tay
+ sep $20
+ lda fadeBlack,y
+ sta :fadedR
+ rep $20
+* combine and store
+ lda :fadedR
+ and #$000F
+ xba
+ sta :fadedRGB
+ lda :fadedGB
+ and #$00FF
+ ora :fadedRGB
+ stal $019E00,x
+ inx
+ inx
+ cpx #$0200
+ bcc :wordLoop
+* wait for VBL
+ sep $20
+:vbl1 bit $C019
+ bmi :vbl1
+:vbl2 bit $C019
+ bpl :vbl2
+ rep $20
+* next step
+ lda :step
+ clc
+ adc #1
+ sta :step
+ cmp #16
+ bcs :fadeDone
+ jmp :stepLoop
+:fadeDone
+ rts
+:step dw 0
+:origWord dw 0
+:fadedB dfb 0
+:fadedGB dfb 0
+:fadedR dfb 0
+:fadedRGB dw 0
+
+* Target palette (fadeIn) and saved palette (fadeOut) buffers.
+targetPal ds 512
+origPal   ds 512
+
+* Fade lookup: fadeBlack[orig_nibble*16 + step] is the faded
+* colour index for that nibble at that step (gamma 1.6).
+* Verbatim from ddiigs title.s.
+fadeBlack
+ db $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+ db $01,$01,$01,$01,$01,$01,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+ db $02,$02,$02,$01,$01,$01,$01,$01,$01,$00,$00,$00,$00,$00,$00,$00
+ db $03,$03,$02,$02,$02,$02,$01,$01,$01,$01,$01,$00,$00,$00,$00,$00
+ db $04,$04,$03,$03,$02,$02,$02,$01,$01,$01,$01,$00,$00,$00,$00,$00
+ db $05,$04,$04,$03,$03,$03,$02,$02,$01,$01,$01,$01,$00,$00,$00,$00
+ db $06,$05,$05,$04,$04,$03,$03,$02,$02,$01,$01,$01,$00,$00,$00,$00
+ db $07,$06,$06,$05,$04,$04,$03,$03,$02,$02,$01,$01,$01,$00,$00,$00
+ db $08,$07,$06,$06,$05,$04,$04,$03,$02,$02,$01,$01,$01,$00,$00,$00
+ db $09,$08,$07,$06,$05,$05,$04,$03,$03,$02,$02,$01,$01,$00,$00,$00
+ db $0A,$09,$08,$07,$06,$05,$04,$04,$03,$02,$02,$01,$01,$00,$00,$00
+ db $0B,$0A,$09,$08,$07,$06,$05,$04,$03,$03,$02,$01,$01,$00,$00,$00
+ db $0C,$0B,$0A,$08,$07,$06,$05,$04,$04,$03,$02,$01,$01,$00,$00,$00
+ db $0D,$0C,$0A,$09,$08,$07,$06,$05,$04,$03,$02,$02,$01,$01,$00,$00
+ db $0E,$0D,$0B,$0A,$09,$07,$06,$05,$04,$03,$02,$02,$01,$01,$00,$00
+ db $0F,$0D,$0C,$0A,$09,$08,$07,$05,$04,$03,$03,$02,$01,$01,$00,$00
+
+* Nonzero for the pass right after a cold boot: TITLE plays the
+* logo splash once, then this stays 0 across title<->game reloads
+* (the part reloads fresh from disk each time, so 0 by default).
+show_splash dw 0
 
   put title_art
   put common
