@@ -180,7 +180,11 @@ netstate_parse
             sta   NSP
             lda   #>proto_payload
             sta   NSP+1
-
+* netstate_decode: as netstate_parse, but the caller has already pointed
+* NSP at the start of the S_STATE bytes. Used for the snapshot embedded
+* in S_MATCH_START (after its 37-byte prefix) and S_ACTION_RESULT (after
+* its header + event list).
+netstate_decode
             ldy   #0                       ; 4 header bytes
             lda   (NSP),y
             sta   ns_active

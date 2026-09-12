@@ -43,3 +43,4 @@ src/nettest
 src/nettest_wrap
 src/proto_test
 src/netgame_test
+src/nettest_client
