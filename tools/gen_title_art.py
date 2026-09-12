@@ -55,7 +55,13 @@ def main():
     pal256 = read_image(os.path.join(RAW, "title.png"))[3]
     # IIGS slots: 0 background, 1-4 colour registers 0-3
     atari_codes = [shadows[4]] + shadows[:4]
-    slot_rgb = [tuple(pal256[c]) for c in atari_codes]
+    # The title.png capture is markedly darker than atari800's actual output, so
+    # override the register colours we use with the true atari800 IIGS values
+    # (sampled from reference combat_chess.gif) -- grey, red, gold, blue-violet.
+    ATARI800_IIGS = {0x0C: 0x0DDD, 0x36: 0x0E45, 0x1C: 0x0FE5, 0x76: 0x056F}
+    slot_iigs = [ATARI800_IIGS.get(c, rgb_to_iigs(pal256[c])) for c in atari_codes]
+    slot_rgb = [(((v >> 8) & 0xF) * 17, ((v >> 4) & 0xF) * 17, (v & 0xF) * 17)
+                for v in slot_iigs]
 
     rows = []                                    # 96 rows of 320 slot indices
     for cy in range(6):
@@ -84,14 +90,14 @@ def main():
         f.write("*   pixels per byte, high nibble left, slot indices 0-4\n")
         f.write("*----------------------------------------------------------\n")
         f.write("TITLE_ART_ROWS = 96\n")
-        f.write("title_palette\n dw " + ",".join(f"${rgb_to_iigs(c):04X}" for c in slot_rgb) + "\n")
+        f.write("title_palette\n dw " + ",".join(f"${v:04X}" for v in slot_iigs) + "\n")
         f.write("title_art\n")
         for line in rows:
             packed = bytes((line[i] << 4) | line[i + 1] for i in range(0, 320, 2))
             for i in range(0, 160, 32):
                 f.write(" hex " + packed[i:i + 32].hex().upper() + "\n")
     print(f"wrote {a.out}: 96 rows, palette "
-          + " ".join(f"${c:02X}->${rgb_to_iigs(rgb):03X}" for c, rgb in zip(atari_codes, slot_rgb)))
+          + " ".join(f"${c:02X}->${v:03X}" for c, v in zip(atari_codes, slot_iigs)))
 
     if a.preview:
         s = a.scale

@@ -50,7 +50,7 @@ NTP_MODULE_HI    = $0004          ; high word of the module pointer $04/0000
   lda #TEXT_OPAQUE
   jsr set_text_mode         ; inverse fields need the cell painted
   jsr title_palette_load
-  lda #10                   ; light gray border to match the grey plaque ground ($0AAA)
+  lda #15                   ; white border, matching the white top half (Atari title)
   jsr set_border
   jsr ntp_start             ; start the title music (silent if absent)
   lda ntp_playing           ; a failed network setup returns here with IRQs masked;
@@ -196,6 +196,18 @@ title_palette_load
  stal $E19E00+10
  lda #$0FFF
  stal $E19E00+30
+* palette 1: the same plaque colours but a WHITE ground (slot 0), for the
+* scanlines above the yellow rule. The SCBs pick it per scanline so the top
+* half is white and the bottom half stays the grey of palette 0.
+ ldx #8
+:pal1
+ lda title_palette,x
+ stal $E19E20,x            ; palette 1 slots 0-4 = the plaque colours
+ dex
+ dex
+ bpl :pal1
+ lda #$0FFF
+ stal $E19E20              ; palette 1 slot 0 = white
  rts
 
 *----------------------------------------------------------
@@ -204,10 +216,12 @@ title_palette_load
 draw_title
  MX %00
  jsr clear_grey
+ lda #$01                  ; scanlines above the rule -> palette 1 (white ground)
+ jsr set_top_scbs
  jsr blit_plaque
- lda #$2222                ; two rows of slot 2, the yellow rule
+ lda #$2222                ; the yellow rule, full width and a full font tall
  ldx #DIVIDER_ROW*SCREEN_ROW+SCREEN
- ldy #2
+ ldy #DIVIDER_H
  jsr fill_rows
  lda #seg_avalon
  ldx #$FFFF
@@ -246,6 +260,24 @@ draw_title
  jmp draw_line
 
 DIVIDER_ROW = 98
+DIVIDER_H   = 8            ; the yellow rule is a full character tall (Atari title)
+
+* set_top_scbs - A (low byte) = the Scan Control Byte for scanlines 0..
+* DIVIDER_ROW-1 (above the yellow rule); the rest keep palette 0. Used to
+* paint the top half white ($01 -> palette 1) on the title and reset it grey
+* ($00) for the options page. 8-bit A in; native 16-bit preserved.
+set_top_scbs
+ MX %00
+ sep #$20
+ MX %10
+ ldx #DIVIDER_ROW-1
+:lp
+ stal $E19D00,x            ; SCB table: one byte per scanline
+ dex
+ bpl :lp
+ rep #$20
+ MX %00
+ rts
 
 * blit_plaque - the 96-row bitmap to the top of the screen
 * in one block move.
@@ -391,6 +423,8 @@ options_page
  stz cur_field
 :redraw
  jsr clear_grey
+ lda #$00                  ; the whole options page is grey (undo the title's white top)
+ jsr set_top_scbs
  jsr fmt_fields
  lda #seg_opt_head
  ldx #$FFFF
@@ -813,7 +847,7 @@ bot_level_names  da s_bot_random,s_bot_greedy,s_bot_chooser
 *----------------------------------------------------------
 seg_avalon
  da s_avalon
- dfb $80+STYLE_HEADING
+ dfb $80+STYLE_INVERSE     ; grey-on-black like the key names (Atari title)
  da 0
 seg_copy
  da s_copy
