@@ -46,6 +46,7 @@ UF_ALIVE = 0x80
 OVER_CRUISER = 0        # enemy Battle Cruiser destroyed
 OVER_SURRENDER = 1
 OVER_STALEMATE = 2
+OVER_TIME = 3           # a side's clock ran out (server-authoritative time)
 
 
 @dataclass
@@ -359,6 +360,29 @@ class GameState:
         self.game_over = True
         self.winner = R.SIDE_BLACK if side == R.SIDE_RED else R.SIDE_RED
         self.over_reason = OVER_SURRENDER
+        self._bump_serial()
+
+    # ---- clock (server-authoritative time; the driver lives in match_server) ----
+    def remaining_ms(self, side):
+        return self.red_remaining_ms if side == R.SIDE_RED else self.black_remaining_ms
+
+    def deduct_time(self, side, ms):
+        """Charge `ms` of elapsed time to `side`, clamped at zero. Returns the
+        new remaining. Does not bump the state serial (the clock ticks
+        continuously; the serial tracks discrete state changes) nor end the game
+        -- the caller checks for a flag."""
+        ms = max(0, int(ms))
+        if side == R.SIDE_RED:
+            self.red_remaining_ms = max(0, self.red_remaining_ms - ms)
+            return self.red_remaining_ms
+        self.black_remaining_ms = max(0, self.black_remaining_ms - ms)
+        return self.black_remaining_ms
+
+    def timeout(self, side):
+        """`side` ran out of time; the other side wins (spec: clock loss)."""
+        self.game_over = True
+        self.winner = R.SIDE_BLACK if side == R.SIDE_RED else R.SIDE_RED
+        self.over_reason = OVER_TIME
         self._bump_serial()
 
     # ---- serialization (spec 20) ----

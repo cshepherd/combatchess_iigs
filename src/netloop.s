@@ -354,11 +354,15 @@ net_poll_step
             beq   :rsurr
             cmp   #2                          ; OVER_STALEMATE
             beq   :rstale
+            cmp   #3                          ; OVER_TIME
+            beq   :rtime
             lda   #REASON_CRUISER             ; OVER_CRUISER (0)
             bra   :setreason
 :rsurr      lda   #REASON_SURRENDER
             bra   :setreason
 :rstale     lda   #REASON_STALEMATE
+            bra   :setreason
+:rtime      lda   #REASON_TIME
 :setreason  sta   result_reason
             lda   #1
             sta   nl_over

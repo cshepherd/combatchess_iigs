@@ -34,6 +34,9 @@ DEFAULT_MOVES = 5
 # connection before the opponent wins by abandonment (spec 24.2). Tests set
 # CC_GRACE low; bots never get a grace (they cannot reconnect).
 DEFAULT_GRACE = float(os.environ.get("CC_GRACE", "120"))
+# Per-side time budget, server-authoritative (spec: the chess clock). CC_TIME is
+# in seconds; tests set it small to force a clock loss. Default 600s = 10 min.
+DEFAULT_TIME_MS = int(float(os.environ.get("CC_TIME", "600")) * 1000)
 SIDE_NAME = {R.SIDE_RED: "RED", R.SIDE_BLACK: "BLACK"}
 ERR_OPPONENT_LOST = 10        # S_ERROR code: your opponent dropped (grace running)
 
@@ -100,7 +103,14 @@ class Match:
         self.players = {R.SIDE_RED: red, R.SIDE_BLACK: black}
         red.match = black.match = self
         red.side, black.side = R.SIDE_RED, R.SIDE_BLACK
-        self.state = S.GameState(board, moves_per_turn=moves)
+        self.state = S.GameState(board, moves_per_turn=moves,
+                                 red_time_ms=DEFAULT_TIME_MS,
+                                 black_time_ms=DEFAULT_TIME_MS)
+        # Server-authoritative clock: the active side's time runs down in wall
+        # time; turn_start marks when the current meter began, clock_task is the
+        # pending flag-fall. Both None when the meter is stopped (paused/over).
+        self.turn_start = None
+        self.clock_task = None
         # Reconnect bookkeeping (spec 24): a per-player bearer token, whether
         # each side is currently connected, and any running grace timer.
         self.tokens = {R.SIDE_RED: secrets.token_bytes(16),
@@ -123,6 +133,7 @@ class Match:
                 self.tokens[side], blob, opponent_name=opp.name, seq=sess.out_seq)
             sess.out_seq += 1
             await sess.send(frame)
+        self._arm_clock()                      # the starting side's clock begins
 
     async def broadcast(self, frame_fn):
         blob = self.state.serialize()
@@ -152,6 +163,8 @@ class Match:
         if self.state.game_over:
             await sess.send(P.error_frame(1, "game over"))
             return
+        self._charge_active()      # bank the active side's think time so the
+                                   # snapshot we are about to send shows live clocks
         if sess.side != self.state.active_side and t != P.C_SURRENDER:
             await self.broadcast(result(0xFE, []))    # not your turn
             return
@@ -183,12 +196,70 @@ class Match:
             return
 
         if self.state.game_over:
-            winner = 0xFF if self.state.winner is None else self.state.winner
-            for s2 in self.players.values():
-                await s2.send(P.game_over_frame(self.state.over_reason, winner))
-            log(f"match {self.match_id}: over reason={self.state.over_reason} "
-                f"winner={self.state.winner}")
-            self.server.unregister_match(self)      # tokens/grace no longer valid
+            await self._end_game()
+        else:
+            self._arm_clock()                       # re-arm for the current mover
+
+    # ---- server-authoritative clock ---------------------------------------
+    def _loop_time(self):
+        return asyncio.get_event_loop().time()
+
+    def _cancel_clock(self):
+        if self.clock_task:
+            self.clock_task.cancel()
+            self.clock_task = None
+
+    def _charge_active(self):
+        """Bank the wall time spent since the meter started against the active
+        side's remaining, and restart the meter. A no-op while it is stopped."""
+        if self.turn_start is None or self.state.game_over:
+            return
+        now = self._loop_time()
+        self.state.deduct_time(self.state.active_side,
+                               int((now - self.turn_start) * 1000))
+        self.turn_start = now
+
+    def _arm_clock(self):
+        """Start the active side's meter and schedule its flag fall. Skipped
+        while that side is disconnected (the clock is paused during grace)."""
+        self._cancel_clock()
+        if self.state.game_over:
+            return
+        side = self.state.active_side
+        if not self.connected.get(side, True):
+            self.turn_start = None
+            return
+        self.turn_start = self._loop_time()
+        remaining_s = max(0.0, self.state.remaining_ms(side) / 1000.0)
+        self.clock_task = asyncio.create_task(self._flag_fall(remaining_s, side))
+
+    def _pause_clock(self):
+        """Stop the meter (a player dropped): bank what the active side has used
+        so the grace window itself is not charged, and cancel the flag fall."""
+        self._charge_active()
+        self._cancel_clock()
+        self.turn_start = None
+
+    async def _flag_fall(self, secs, side):
+        try:
+            await asyncio.sleep(secs)
+        except asyncio.CancelledError:
+            return
+        self.clock_task = None                      # we ARE the task: clear the
+        if self.state.game_over or self.state.active_side != side:
+            return                                   # handle so _end_game's
+        self._charge_active()                       # _cancel_clock is a no-op and
+        self.state.timeout(side)                    # cannot cancel us mid-await
+        await self._end_game()
+
+    async def _end_game(self):
+        self._cancel_clock()
+        winner = 0xFF if self.state.winner is None else self.state.winner
+        for s2 in self.players.values():
+            await s2.send(P.game_over_frame(self.state.over_reason, winner))
+        log(f"match {self.match_id}: over reason={self.state.over_reason} "
+            f"winner={self.state.winner}")
+        self.server.unregister_match(self)          # tokens/grace no longer valid
 
 
 class Server:
@@ -236,6 +307,7 @@ class Server:
         for task in m.grace_tasks.values():
             task.cancel()
         m.grace_tasks.clear()
+        m._cancel_clock()                            # stop any pending flag fall
 
     async def drop(self, sess):
         self.sessions.discard(sess)
@@ -261,9 +333,11 @@ class Server:
 
     async def _enter_grace(self, m, side):
         """A human dropped mid-match (spec 24.2): keep the match and its token,
-        tell the opponent, and start the abandonment timer. Clocks are nominal
-        on the server, so the restored S_STATE resumes them on reconnect."""
+        tell the opponent, and start the abandonment timer. The clock is paused
+        for the grace window so nobody flags while disconnected; the restored
+        S_STATE carries the banked time and _arm_clock resumes it on reconnect."""
         m.connected[side] = False
+        m._pause_clock()
         log(f"match {m.match_id}: {SIDE_NAME[side]} disconnected; "
             f"grace {self.grace_s:g}s")
         other = m.players[self.other_side(side)]
@@ -307,6 +381,7 @@ class Server:
         task = m.grace_tasks.pop(side, None)
         if task:
             task.cancel()
+        m._arm_clock()                                   # resume the paused clock
         log(f"match {m.match_id}: {SIDE_NAME[side]} reconnected (session {sess.session_id})")
         await sess.send(P.reconnect_result_frame(P.RC_OK, side, m.state.serialize()))
         other = m.players[self.other_side(side)]
