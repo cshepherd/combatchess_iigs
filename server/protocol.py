@@ -268,3 +268,121 @@ if __name__ == "__main__":
     assert Ping.decode(got[2].payload).nonce == 0x11223344
     assert Pong.decode(got[3].payload).nonce == 0x11223344
     print("protocol.py smoke test OK:", [f.type_name for f in got])
+
+
+# --------------------------------------------------------------------------
+# N3 messages: matchmaking, actions, results, state (spec 11-21)
+# --------------------------------------------------------------------------
+
+# Matchmaking mode for C_QUEUE_JOIN (spec 11).
+QUEUE_QUICK = 0
+QUEUE_HUMAN = 1
+QUEUE_BOT = 2
+
+
+@dataclass
+class QueueJoin:
+    mode: int = QUEUE_QUICK
+
+    def encode(self) -> bytes:
+        return struct.pack("<B", self.mode)
+
+    @classmethod
+    def decode(cls, payload: bytes) -> "QueueJoin":
+        return cls(payload[0])
+
+
+@dataclass
+class Move:
+    match_id: int
+    action_id: int
+    unit_id: int
+    dest_x: int
+    dest_y: int
+
+    def encode(self) -> bytes:
+        return struct.pack("<IHBBB", self.match_id, self.action_id,
+                           self.unit_id, self.dest_x, self.dest_y)
+
+    @classmethod
+    def decode(cls, p: bytes) -> "Move":
+        return cls(*struct.unpack("<IHBBB", p))
+
+
+@dataclass
+class Fire:
+    match_id: int
+    action_id: int
+    attacker_id: int
+    target_id: int
+
+    def encode(self) -> bytes:
+        return struct.pack("<IHBB", self.match_id, self.action_id,
+                           self.attacker_id, self.target_id)
+
+    @classmethod
+    def decode(cls, p: bytes) -> "Fire":
+        return cls(*struct.unpack("<IHBB", p))
+
+
+@dataclass
+class SimpleAction:
+    """C_END_TURN / C_SURRENDER: match_id + action_id only."""
+    match_id: int
+    action_id: int
+
+    def encode(self) -> bytes:
+        return struct.pack("<IH", self.match_id, self.action_id)
+
+    @classmethod
+    def decode(cls, p: bytes) -> "SimpleAction":
+        return cls(*struct.unpack("<IH", p))
+
+
+def match_start_frame(match_id, assigned_side, board_number, moves_per_turn,
+                      shoot_option, starting_side, red_tanks, red_cars,
+                      black_tanks, black_cars, red_time_ms, black_time_ms,
+                      reconnect_token: bytes, state_blob: bytes,
+                      seq: int = 0) -> bytes:
+    """S_MATCH_START (spec 12): fixed header fields + serialized state."""
+    assert len(reconnect_token) == 16
+    hdr = struct.pack("<IBBBBBBBBBII", match_id, assigned_side, board_number,
+                      moves_per_turn, shoot_option, starting_side,
+                      red_tanks, red_cars, black_tanks, black_cars,
+                      red_time_ms, black_time_ms)
+    return pack_frame(S_MATCH_START, hdr + reconnect_token + state_blob, seq)
+
+
+def encode_events(events) -> bytes:
+    """Self-describing event list: for each, u8 type, u8 nargs, u8 args[]."""
+    out = bytearray([len(events)])
+    for ev in events:
+        etype = ev[0]
+        args = ev[1:]
+        out.append(etype)
+        out.append(len(args))
+        for a in args:
+            out.append(a & 0xFF)
+    return bytes(out)
+
+
+def action_result_frame(match_id, action_id, action_type, result_code,
+                        events, state_blob: bytes, seq: int = 0) -> bytes:
+    """S_ACTION_RESULT (spec 19): result header + events + state snapshot."""
+    hdr = struct.pack("<IHBB", match_id, action_id, action_type, result_code)
+    return pack_frame(S_ACTION_RESULT, hdr + encode_events(events) + state_blob, seq)
+
+
+def state_frame(state_blob: bytes, seq: int = 0) -> bytes:
+    """S_STATE (spec 20): the canonical snapshot alone."""
+    return pack_frame(S_STATE, state_blob, seq)
+
+
+def game_over_frame(reason, winner, seq: int = 0) -> bytes:
+    """S_GAME_OVER: reason + winner (0xFF winner = draw)."""
+    return pack_frame(S_GAME_OVER, struct.pack("<BB", reason, winner & 0xFF), seq)
+
+
+def error_frame(code, message: str = "", seq: int = 0) -> bytes:
+    raw = message.encode("ascii")[:255]
+    return pack_frame(S_ERROR, struct.pack("<BB", code, len(raw)) + raw, seq)
