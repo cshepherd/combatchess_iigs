@@ -1,0 +1,78 @@
+{
+  "protocol_version": 1,
+  "header_size": 8,
+  "max_payload": 1024,
+  "fixtures": [
+    {
+      "name": "hello_human",
+      "type": 1,
+      "type_name": "C_HELLO",
+      "seq": 1,
+      "payload_len": 19,
+      "frame_len": 27,
+      "fields": {
+        "rules_version": 1,
+        "client_build": 66051,
+        "capability_bits": 5,
+        "client_kind": 0,
+        "player_name": "cshepherd"
+      },
+      "hex": "434301011300010001000302010005000009637368657068657264"
+    },
+    {
+      "name": "hello_bot",
+      "type": 1,
+      "type_name": "C_HELLO",
+      "seq": 7,
+      "payload_len": 19,
+      "frame_len": 27,
+      "fields": {
+        "rules_version": 1,
+        "client_build": 2864434397,
+        "capability_bits": 8,
+        "client_kind": 1,
+        "player_name": "RandomBot"
+      },
+      "hex": "43430101130007000100ddccbbaa0800010952616e646f6d426f74"
+    },
+    {
+      "name": "welcome",
+      "type": 2,
+      "type_name": "S_WELCOME",
+      "seq": 1,
+      "payload_len": 20,
+      "frame_len": 28,
+      "fields": {
+        "accepted_rules_version": 1,
+        "session_id": 3735928559,
+        "server_flags": 1,
+        "server_name": "CombatChess"
+      },
+      "hex": "43430102140001000100efbeadde01000b436f6d6261744368657373"
+    },
+    {
+      "name": "ping",
+      "type": 32,
+      "type_name": "C_PING",
+      "seq": 4660,
+      "payload_len": 4,
+      "frame_len": 12,
+      "fields": {
+        "nonce": 287454020
+      },
+      "hex": "434301200400341244332211"
+    },
+    {
+      "name": "pong",
+      "type": 33,
+      "type_name": "S_PONG",
+      "seq": 4660,
+      "payload_len": 4,
+      "frame_len": 12,
+      "fields": {
+        "nonce": 287454020
+      },
+      "hex": "434301210400341244332211"
+    }
+  ]
+}
