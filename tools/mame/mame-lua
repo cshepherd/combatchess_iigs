@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# mame-lua -- send a Lua command to a running MAME (claudebridge plugin) and
+# print its output. Mirrors ../ddiigs' mame-lua.
+#
+#   mame-lua "1+1"                     # expression (auto "return")
+#   mame-lua -f script.lua             # a Lua file
+#   mame-lua -f /dev/stdin <<'EOF' ... # heredoc
+#   mame-lua -t 15 "..."               # custom timeout (default 5s)
+set -uo pipefail
+
+CMD=/tmp/mame_bridge_cmd.lua
+OUT=/tmp/mame_bridge_out.txt
+DONE=/tmp/mame_bridge_done
+TIMEOUT=5
+SRC=""; FROM_FILE=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -t) TIMEOUT="$2"; shift 2;;
+        -f) FROM_FILE="$2"; shift 2;;
+        -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
+        *)  SRC="$1"; shift;;
+    esac
+done
+[ -n "$FROM_FILE" ] && SRC="$(cat "$FROM_FILE")"
+if [ -z "$SRC" ]; then echo "mame-lua: no command given" >&2; exit 2; fi
+
+rm -f "$OUT" "$DONE"
+tmp="$(mktemp)"
+printf '%s' "$SRC" > "$tmp"
+mv "$tmp" "$CMD"                      # atomic: plugin never reads a partial file
+
+deadline=$(( $(date +%s) + TIMEOUT ))
+while [ ! -e "$DONE" ]; do
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+        echo "mame-lua: timeout after ${TIMEOUT}s (is MAME running with -plugin claudebridge?)" >&2
+        rm -f "$CMD"
+        exit 1
+    fi
+    sleep 0.05
+done
+cat "$OUT" 2>/dev/null || true

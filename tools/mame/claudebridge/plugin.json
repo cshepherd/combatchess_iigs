@@ -1,0 +1,10 @@
+{
+  "plugin": {
+    "name": "claudebridge",
+    "description": "Claude Code Lua command bridge",
+    "version": "1.0.0",
+    "author": "Claude Code",
+    "type": "plugin",
+    "start": "true"
+  }
+}

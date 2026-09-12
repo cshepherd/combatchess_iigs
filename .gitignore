@@ -36,3 +36,7 @@ reference/raw/**/*.rec
 # src/sound_samples.s is the committed artifact, like the board art).
 reference/raw/**/*.wav
 reference/raw/effects/*.dat
+
+# Standalone network bring-up harness: assembled in-place (not a Makefile
+# part), so its binary lands in src/. The source (src/nettest.s) is tracked.
+src/nettest
