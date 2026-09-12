@@ -272,6 +272,17 @@ eng_net_send_end
  MX %00
  rts
 
+* eng_net_send_surrender - tell the server we resign. The server ends the
+* match and answers with S_GAME_OVER; we do not end the game locally.
+eng_net_send_surrender
+ MX %00
+ sep #$30
+ MX %11
+ jsr net_send_surrender
+ rep #$30
+ MX %00
+ rts
+
 net_tgt ds 2
 
 *----------------------------------------------------------
@@ -861,6 +872,12 @@ k_pause
 
 k_surrender
  MX %00
+ jsr is_net_mode           ; network game: tell the server; it ends the match
+ bcc :local                ; and answers S_GAME_OVER, which shows the result
+ jsr eng_net_send_surrender
+ lda #s_surrendering
+ jmp set_msg
+:local
  lda active_side
  and #$00FF
  tax
@@ -967,13 +984,34 @@ build_result_msg
  jsr lb_str
  bra :end
 :winner
+ jsr is_net_mode           ; a network game knows which side WE are, so it frames
+ bcc :sidewin              ; the result as YOU WIN / YOU LOSE (a hot-seat cannot)
+ lda game_result
+ and #$00FF
+ dec                       ; A = winning side (0 RED / 1 BLACK)
+ sta res_win
+ lda nl_my_side
+ and #$00FF
+ cmp res_win
+ bne :youlose
+ lda #s_you_win            ; "YOU WIN: "
+ jsr lb_str
+ bra :reason
+:youlose
+ lda #s_you_lose           ; "YOU LOSE: "
+ jsr lb_str
+ bra :reason
+:sidewin
+ lda game_result
+ and #$00FF
  dec                       ; side that won
  asl
  tax
  lda side_names,x
  jsr lb_str
- lda #s_wins
+ lda #s_wins               ; " WINS: "
  jsr lb_str
+:reason
  lda result_reason
  and #$00FF
  asl
@@ -2716,6 +2754,8 @@ s_moved         asc 'MOVED'
                 dfb 0
 s_fired         asc 'FIRING...'
                 dfb 0
+s_surrendering  asc 'SURRENDERING...'
+                dfb 0
 s_turn_over     asc 'TURN OVER'
                 dfb 0
 s_paused        asc 'PAUSED  (P TO RESUME)'
@@ -2774,6 +2814,11 @@ s_by_stalemate  asc 'STALEMATE'
                 dfb 0
 s_any_key       asc ' (ANY KEY)'
                 dfb 0
+s_you_win       asc 'YOU WIN: '
+                dfb 0
+s_you_lose      asc 'YOU LOSE: '
+                dfb 0
+res_win         ds 2
 s_game_over     asc 'GAME OVER'
                 dfb 0
 s_red           asc 'RED'

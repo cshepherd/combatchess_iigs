@@ -609,6 +609,15 @@ net_send_end
             jsr   net_frame_send
             rts
 
+* net_send_surrender: sends C_SURRENDER. The server ends the match and
+* broadcasts S_GAME_OVER to both players, which drives the result screen;
+* the client does not decide the outcome locally.
+net_send_surrender
+            jsr   nl_next_action
+            jsr   net_build_surrender
+            jsr   net_frame_send
+            rts
+
 * nl_next_action: bump ng_seq and copy nl_action -> ng_action_id, then
 * increment nl_action. Clobbers A.
 nl_next_action

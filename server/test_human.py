@@ -145,6 +145,19 @@ async def run():
     _, _, _, rcodeb = struct.unpack_from("<IHBB", bf.payload, 0)
     check(rcodeb == S.MV_OK, "BLACK's move was accepted by the server")
 
+    # RED resigns (allowed even on the opponent's turn): the server ends the
+    # match and sends BOTH peers S_GAME_OVER, the winner being the side that
+    # did not surrender. This is the contract the IIGS 'X' (surrender) key uses.
+    await red_c.send(P.pack_frame(P.C_SURRENDER, P.SimpleAction(mid_a, 3).encode(), seq=4))
+    goa = await red_c.recv(P.S_GAME_OVER)
+    gob = await black_c.recv(P.S_GAME_OVER)
+    ra, wa = struct.unpack_from("<BB", goa.payload, 0)
+    rb, wb = struct.unpack_from("<BB", gob.payload, 0)
+    check(ra == S.OVER_SURRENDER and rb == S.OVER_SURRENDER,
+          "both peers see GAME_OVER with reason=surrender")
+    check(wa == R.SIDE_BLACK and wb == R.SIDE_BLACK,
+          "the winner is the side that did not surrender (BLACK)")
+
     a.close()
     b.close()
     await asyncio.sleep(0.05)
