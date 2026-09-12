@@ -161,7 +161,10 @@ net_poll_step
             sta   nl_off
             ldx   nl_ecount
             beq   :evdone
-:evskip     ldy   nl_off
+:evskip     phx                               ; nl_anim_event reuses X (event counter)
+            jsr   nl_anim_event               ; capture a move/shot for the display to animate
+            plx
+            ldy   nl_off
             iny
             lda   proto_payload,y             ; nargs
             clc
@@ -206,6 +209,103 @@ net_poll_step
             sta   nl_over
             rts
 :none       rts
+
+* nl_anim_event: proto_payload+nl_off points at one S_ACTION_RESULT event
+* [type][nargs][args...]. Set the same mv_* / fr_* records the local
+* do_move/do_fire set, so the game loop's anim_check slides a moved unit and
+* shot_check flies + explodes a shot -- for the server's actions exactly like
+* local play (our own move comes back the same way). Server event numbering
+* (state.py): 1 UNIT_MOVED, 2 SHOT_FIRED, 3 SHOT_HIT, 4 SHOT_MISSED; args are
+* 1 byte each and start at +2. Runs 8-bit. Clobbers A/X/Y.
+nl_anim_event
+            ldx   nl_off
+            lda   proto_payload,x             ; event type
+            cmp   #1                          ; EV_UNIT_MOVED
+            beq   :moved
+            cmp   #2                          ; EV_SHOT_FIRED
+            beq   :fired
+            cmp   #3                          ; EV_SHOT_HIT
+            beq   :hit
+            cmp   #4                          ; EV_SHOT_MISSED
+            beq   :missed
+            rts                               ; other events carry no animation
+:moved                                        ; args: unit, oldx, oldy, newx, newy
+            lda   proto_payload+2,x
+            sta   mv_last_unit
+            lda   proto_payload+3,x
+            sta   mv_last_fx
+            lda   proto_payload+4,x
+            sta   mv_last_fy
+            lda   proto_payload+5,x
+            sta   mv_last_tx
+            lda   proto_payload+6,x
+            sta   mv_last_ty
+            lda   #1
+            sta   mv_moved
+            rts
+:fired                                        ; args: attacker, target, ax, ay, tx, ty
+            lda   proto_payload+2,x           ; attacker id -> class (for the box size)
+            tay
+            lda   unit_class,y
+            sta   fr_shot_class
+            lda   proto_payload+4,x
+            sta   fr_shot_fx
+            lda   proto_payload+5,x
+            sta   fr_shot_fy
+            lda   proto_payload+6,x
+            sta   fr_shot_tx
+            lda   proto_payload+7,x
+            sta   fr_shot_ty
+            stz   fr_shot_hit                 ; a following HIT event upgrades this
+            lda   #1
+            sta   fr_shot
+            rts
+:hit        lda   #1
+            sta   fr_shot_hit
+            rts
+:missed     jmp   nl_miss_land                ; where the stray shot comes to rest
+
+* nl_miss_land: fr_shot_land_x/y = the square a missed shot lands on -- one
+* square past the target along the line of fire, shifted a tile in y (up, or
+* down when up would leave the top of the board), clamped to the board. The
+* exact copy of miss_resolve's landing math (fire.s), reusing ms_sgn/ms_clamp,
+* since the snapshot carries no scatter square. In: fr_shot_fx/fy/tx/ty.
+nl_miss_land
+            lda   fr_shot_tx                  ; dx = sgn(tx - fx)
+            sec
+            sbc   fr_shot_fx
+            jsr   ms_sgn
+            sta   rt0
+            lda   fr_shot_ty                  ; dy = sgn(ty - fy)
+            sec
+            sbc   fr_shot_fy
+            jsr   ms_sgn
+            sta   rt1
+            lda   fr_shot_fy                  ; y shift from the higher endpoint
+            cmp   fr_shot_ty
+            bcc   :miny                        ; fy < ty: min is fy (already in A)
+            lda   fr_shot_ty
+:miny       cmp   #1
+            bcs   :up                          ; min >= 1: shift up
+            lda   #1                           ; top-row endpoint: shift down
+            bra   :yadd
+:up         lda   #$FF
+:yadd       clc
+            adc   rt1
+            sta   rt1                          ; dy + y shift
+            lda   fr_shot_tx                   ; land_x = clamp(tx + dx)
+            clc
+            adc   rt0
+            ldx   #BOARD_W
+            jsr   ms_clamp
+            sta   fr_shot_land_x
+            lda   fr_shot_ty                   ; land_y = clamp(ty + dy + shift)
+            clc
+            adc   rt1
+            ldx   #BOARD_H
+            jsr   ms_clamp
+            sta   fr_shot_land_y
+            rts
 
 * net_send_move: A = unit id, X = dest x, Y = dest y. Sends C_MOVE with
 * the next action id. Clobbers A/X/Y.
