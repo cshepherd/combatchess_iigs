@@ -35,7 +35,7 @@ start       sei                         ; no interrupts during the probe
             pha
             plb
 
-            ldx   #$2F                   ; poison the whole $0300..$032F block
+            ldx   #$4F                   ; poison $0300..$034F (result + echo buffer)
             lda   #$EE
 :poison     sta   $0300,x
             dex
@@ -99,30 +99,42 @@ start       sei                         ; no interrupts during the probe
             cmp   #W5_SOCK_ESTAB          ; only send if we actually connected
             bne   :done
 
-            lda   #$C0                     ; send four bytes
-            jsr   net_send_byte
-            lda   #$C1
-            jsr   net_send_byte
-            lda   #$C2
-            jsr   net_send_byte
-            lda   #$C3
-            jsr   net_send_byte
+            lda   #<net_msg               ; send the whole message in one block
+            sta   NPTR
+            lda   #>net_msg
+            sta   NPTR+1
+            lda   #NET_MSG_LEN
+            sta   net_len+0
+            stz   net_len+1
+            jsr   net_send
 
             stz   $0326                   ; bytes received so far
             stz   $0325                   ; receive poll counter
-:rxloop     jsr   net_recv_byte
-            bcs   :rxgot
-            inc   $0325
+:rxloop     clc                            ; NRXP -> next free slot in the echo buffer
+            lda   #<$0340
+            adc   $0326
+            sta   NRXP
+            lda   #>$0340
+            adc   #0
+            sta   NRXP+1
+            lda   #16                      ; read up to 16 bytes this poll
+            sta   net_len+0
+            stz   net_len+1
+            jsr   net_recv
+            lda   net_rcvd+0
+            beq   :rxidle                 ; nothing this poll
+            clc                            ; total += net_rcvd (< 256 total here)
+            lda   $0326
+            adc   net_rcvd+0
+            sta   $0326
+            stz   $0325                   ; reset idle timeout
+            cmp   #NET_MSG_LEN
+            bcs   :rxdone                 ; got the whole echo back
+            bra   :rxloop
+:rxidle     inc   $0325
             beq   :rxdone                 ; 256 idle polls -> stop
             jsr   net_delay
             bra   :rxloop
-:rxgot      ldx   $0326
-            sta   $0320,x                 ; store the echoed byte
-            inx
-            stx   $0326
-            stz   $0325                   ; reset the idle timeout
-            cpx   #4
-            bne   :rxloop
 :rxdone     lda   $0326
             sta   $0324                   ; count of bytes echoed back
             jsr   net_close
@@ -130,6 +142,9 @@ start       sei                         ; no interrupts during the probe
 :done       lda   #$A5
             sta   $0304                  ; done marker, written last
 :spin       bra   :spin
+
+net_msg      asc   'COMBAT-CHESS'          ; 12-byte block echo test payload
+NET_MSG_LEN  = *-net_msg
 
             put   net
             put   netdhcp

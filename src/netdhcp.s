@@ -490,19 +490,6 @@ net_dhcp_verifyack
             rts
 
 *----------------------------------------------------------
-* net_delay: a short busy wait between RX polls (~tens of ms),
-* replacing the monitor WAIT hdtelnet used. Clobbers A/X/Y.
-*----------------------------------------------------------
-net_delay
-            ldy   #$40
-:d1         ldx   #$FF
-:d0         dex
-            bne   :d0
-            dey
-            bne   :d1
-            rts
-
-*----------------------------------------------------------
 * DHCP datagram templates. chaddr / client-id carry NET_MAC*;
 * the transaction id is fixed (see the header note).
 *----------------------------------------------------------
@@ -565,9 +552,7 @@ net_req_len  = net_req_end - net_req
 *----------------------------------------------------------
 net_server   dfb   0,0,0,0            ; DHCP server address
 net_dns      dfb   0,0,0,0            ; offered DNS server
-net_len      dfb   0,0                ; datagram length (16-bit, net_udp_send)
 ncopy        dfb   0,0                ; RX copy counter (16-bit, net_udp_recv)
-net_tmp2     dfb   0
 
 net_rxbuf    ds    400
 net_rxdata   = net_rxbuf + DHCP_RXHDR

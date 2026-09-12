@@ -66,10 +66,14 @@ W5_MODE_TCP    = $01           ; S0_MR: TCP
 W5_MODE_IND    = $03           ; MR: indirect bus + address auto-increment
 W5_MEM_2K_EACH = $55           ; RMSR/TMSR: 2KB to each of the four sockets
 
-* Socket 0 buffer bases and ring mask in W5100 memory.
+* Socket 0 buffer bases and ring mask in W5100 memory. Each 2KB
+* ring runs base..base+$07FF; the exclusive end is used to detect
+* wrap in the block transfers.
 W5_TX_BASE_HI  = $40           ; $4000
 W5_RX_BASE_HI  = $60           ; $6000
-W5_RING_MASK_HI = $07           ; 2KB-1 high byte
+W5_TX_END_HI   = $48           ; $4800 (one past the TX ring)
+W5_RX_END_HI   = $68           ; $6800 (one past the RX ring)
+W5_RING_MASK_HI = $07          ; 2KB-1 high byte
 
 * Direct-page pointers for the DHCP UDP copy loops (netdhcp.s).
 * These alias shared.s rptr/rptr2 ($E4/$E6): only live inside one
@@ -328,56 +332,122 @@ net_close
             rts
 
 *----------------------------------------------------------
-* net_send_byte: A = byte to send on socket 0. Reads TX_WR,
-* translates it into the 2KB TX ring at $4000, waits for free
-* space, writes the byte, advances TX_WR, and commands SEND,
-* waiting for the command register to clear. Binary-clean.
-* Preserves nothing meaningful; returns with carry clear.
-* Clobbers A/X/Y and the net scratch words.
+* net_send: send a block on socket 0. On entry NPTR = source
+* pointer (direct page) and net_len = byte count (16-bit). Sends
+* it as one or more CONTIGUOUS segments: each pass writes at most
+* NET_SEG_MAX bytes and never past the ring's top edge, so no one
+* SEND both wraps the 2KB buffer and exceeds the TCP MSS -- the
+* single case that trips a W5100 (MAME) bug which mis-sends the
+* post-MSS bytes (the ring content is correct, but the second
+* TCP segment is read from the wrong offset). Waits (bounded) for
+* TX free space each segment. Carry clear on success, carry set
+* if a free-space wait timed out. Clobbers A/X/Y, NPTR and net
+* scratch.
 *----------------------------------------------------------
-net_send_byte
-            sta   net_tmp             ; hold the data byte
+NET_SEG_MAX = 1024              ; bytes per SEND: < MSS and <= a ring, so no wrap+MSS
 
-            lda   #>W5_S0_TXWR        ; $0424: TX write pointer
+net_send
+:loop       lda   net_len+0            ; anything left to send?
+            ora   net_len+1
+            bne   :more
+            clc
+            rts
+
+:more       lda   #>W5_S0_TXWR         ; read TX write pointer
             ldx   #<W5_S0_TXWR
             jsr   net_setaddr
             jsr   net_getdata
-            sta   ntx_wr+1            ; high byte first (big-endian on the wire)
+            sta   ntx_wr+1
             sta   ntx_ptr+1
             jsr   net_getdata
             sta   ntx_wr+0
             sta   ntx_ptr+0
 
-            lda   ntx_wr+0            ; translate low = raw low (& $FF)
-            sta   ntx_wr+0
-            lda   ntx_wr+1           ; high = (raw hi & $07) + $40  -> $4000 ring
+            lda   ntx_wr+1             ; translate start into the $4000 ring
             and   #W5_RING_MASK_HI
             clc
             adc   #W5_TX_BASE_HI
             sta   ntx_wr+1
 
-:free       lda   #>W5_S0_TXFSR      ; $0420: wait for any free space
+            sec                          ; room = $4800 - start (bytes to ring top)
+            lda   #$00
+            sbc   ntx_wr+0
+            sta   net_room+0
+            lda   #W5_TX_END_HI
+            sbc   ntx_wr+1
+            sta   net_room+1
+
+* seg = min(net_len, NET_SEG_MAX, room)  -> net_scnt
+            lda   net_len+0
+            sta   net_scnt+0
+            lda   net_len+1
+            sta   net_scnt+1
+            lda   net_scnt+1            ; cap to NET_SEG_MAX
+            cmp   #>NET_SEG_MAX
+            bcc   :capr
+            bne   :capm
+            lda   net_scnt+0
+            cmp   #<NET_SEG_MAX
+            bcc   :capr
+            beq   :capr
+:capm       lda   #<NET_SEG_MAX
+            sta   net_scnt+0
+            lda   #>NET_SEG_MAX
+            sta   net_scnt+1
+:capr       lda   net_scnt+1            ; cap to room (keep the segment contiguous)
+            cmp   net_room+1
+            bcc   :segok
+            bne   :caproom
+            lda   net_scnt+0
+            cmp   net_room+0
+            bcc   :segok
+            beq   :segok
+:caproom    lda   net_room+0
+            sta   net_scnt+0
+            lda   net_room+1
+            sta   net_scnt+1
+:segok
+
+            lda   #0                    ; bounded wait for TX free space >= seg
+            sta   net_wait
+:fs         lda   #>W5_S0_TXFSR
             ldx   #<W5_S0_TXFSR
             jsr   net_setaddr
             jsr   net_getdata
             sta   ntx_free+1
             jsr   net_getdata
             sta   ntx_free+0
+            lda   ntx_free+1
+            cmp   net_scnt+1
+            bcc   :fslow
+            bne   :space
             lda   ntx_free+0
-            ora   ntx_free+1
-            beq   :free
+            cmp   net_scnt+0
+            bcs   :space
+:fslow      inc   net_wait
+            beq   :fsto                 ; 256 tries -> timeout
+            jsr   net_delay
+            bra   :fs
+:fsto       sec
+            rts
 
-            lda   ntx_wr+1           ; write the byte at the ring address
+:space      lda   ntx_wr+1             ; register address -> ring start
             ldx   ntx_wr+0
             jsr   net_setaddr
-            lda   net_tmp
-            jsr   net_setdata
+            lda   net_scnt+0            ; save seg (net_stream_wr consumes net_scnt)
+            sta   net_seg+0
+            lda   net_scnt+1
+            sta   net_seg+1
+            jsr   net_stream_wr          ; write seg bytes; NPTR advances by seg
 
-            inc   ntx_ptr+0          ; advance the raw pointer by 1
-            bne   :nohi
-            inc   ntx_ptr+1
-:nohi
-            lda   #>W5_S0_TXWR       ; write TX_WR back (raw, untranslated)
+            clc                          ; raw TX_WR += seg
+            lda   ntx_ptr+0
+            adc   net_seg+0
+            sta   ntx_ptr+0
+            lda   ntx_ptr+1
+            adc   net_seg+1
+            sta   ntx_ptr+1
+            lda   #>W5_S0_TXWR
             ldx   #<W5_S0_TXWR
             jsr   net_setaddr
             lda   ntx_ptr+1
@@ -385,31 +455,68 @@ net_send_byte
             lda   ntx_ptr+0
             jsr   net_setdata
 
-            lda   #>W5_S0_CR         ; SEND
+            lda   #>W5_S0_CR           ; SEND
             ldx   #<W5_S0_CR
             jsr   net_setaddr
             lda   #W5_CMD_SEND
             jsr   net_setdata
-
-:wt         lda   #>W5_S0_CR         ; wait for the command register to clear
+:wt         lda   #>W5_S0_CR
             ldx   #<W5_S0_CR
             jsr   net_setaddr
             jsr   net_getdata
             bne   :wt
+
+            sec                          ; net_len -= seg, then loop
+            lda   net_len+0
+            sbc   net_seg+0
+            sta   net_len+0
+            lda   net_len+1
+            sbc   net_seg+1
+            sta   net_len+1
+            jmp   :loop
+
+*----------------------------------------------------------
+* net_recv: read up to net_len bytes from socket 0 into the
+* buffer at NRXP (direct page). Reads min(RX received, net_len)
+* bytes, splitting the read at the RX ring's top edge, advances
+* RX_RD, and issues RECV. Returns net_rcvd = bytes actually read
+* (16-bit) and carry clear; net_rcvd = 0 means nothing was
+* waiting. Does not detect a closed socket -- poll net_poll for
+* that. Clobbers A/X/Y, NRXP and the net scratch words.
+*----------------------------------------------------------
+net_recv
+            lda   #>W5_S0_RXRSR        ; received size
+            ldx   #<W5_S0_RXRSR
+            jsr   net_setaddr
+            jsr   net_getdata
+            sta   nrx_rcvd+1
+            jsr   net_getdata
+            sta   nrx_rcvd+0
+            ora   nrx_rcvd+1
+            bne   :avail
+            stz   net_rcvd+0            ; nothing waiting
+            stz   net_rcvd+1
             clc
             rts
 
-*----------------------------------------------------------
-* net_recv_byte: pull one byte from socket 0's RX ring. Returns
-* carry set with the byte in A, or carry clear if none is
-* available yet. Does NOT distinguish an empty ring from a
-* closed socket -- the caller polls net_poll for close. Reads
-* RX_RSR, and on a byte reads it at the translated $6000 ring
-* address, advances RX_RD, and commands RECV.
-* Clobbers A/X/Y and the net scratch words.
-*----------------------------------------------------------
-net_recv_byte
-            lda   #>W5_S0_RXRD       ; $0428: RX read pointer
+:avail      lda   nrx_rcvd+1           ; net_rcvd = min(received, net_len)
+            cmp   net_len+1
+            bcc   :usercv               ; received hi < len hi
+            bne   :uselen               ; received hi > len hi
+            lda   nrx_rcvd+0
+            cmp   net_len+0
+            bcc   :usercv
+:uselen     lda   net_len+0
+            sta   net_rcvd+0
+            lda   net_len+1
+            sta   net_rcvd+1
+            bra   :haveN
+:usercv     lda   nrx_rcvd+0
+            sta   net_rcvd+0
+            lda   nrx_rcvd+1
+            sta   net_rcvd+1
+
+:haveN      lda   #>W5_S0_RXRD         ; read RX read pointer
             ldx   #<W5_S0_RXRD
             jsr   net_setaddr
             jsr   net_getdata
@@ -419,35 +526,63 @@ net_recv_byte
             sta   nrx_rd+0
             sta   nrx_rd_orig+0
 
-            lda   nrx_rd+1           ; translate into the $6000 RX ring
+            lda   nrx_rd+1             ; translate start into the $6000 ring
             and   #W5_RING_MASK_HI
             clc
             adc   #W5_RX_BASE_HI
             sta   nrx_rd+1
 
-            lda   #>W5_S0_RXRSR      ; $0426: received size
-            ldx   #<W5_S0_RXRSR
-            jsr   net_setaddr
-            jsr   net_getdata
-            sta   nrx_rcvd+1
-            jsr   net_getdata
-            sta   nrx_rcvd+0
-            ora   nrx_rcvd+1
-            bne   :have
-            clc                       ; nothing waiting
-            rts
+            sec                          ; room = $6800 - start
+            lda   #$00
+            sbc   nrx_rd+0
+            sta   net_room+0
+            lda   #W5_RX_END_HI
+            sbc   nrx_rd+1
+            sta   net_room+1
 
-:have       lda   nrx_rd+1           ; read the byte at the ring address
+            lda   nrx_rd+1             ; point the register address at the ring
             ldx   nrx_rd+0
             jsr   net_setaddr
-            jsr   net_getdata
-            sta   net_tmp
 
-            inc   nrx_rd_orig+0      ; advance the raw read pointer by 1
-            bne   :nohi
-            inc   nrx_rd_orig+1
-:nohi
-            lda   #>W5_S0_RXRD       ; write RX_RD back (raw, untranslated)
+            lda   net_rcvd+1           ; net_rcvd <= room ? (one chunk)
+            cmp   net_room+1
+            bcc   :rone
+            bne   :rsplit
+            lda   net_rcvd+0
+            cmp   net_room+0
+            beq   :rone
+            bcc   :rone
+:rsplit     lda   net_room+0           ; chunk 1 = room bytes
+            sta   net_scnt+0
+            lda   net_room+1
+            sta   net_scnt+1
+            jsr   net_stream_rd
+            lda   #W5_RX_BASE_HI        ; wrap: register address -> $6000
+            ldx   #$00
+            jsr   net_setaddr
+            sec                          ; chunk 2 = net_rcvd - room
+            lda   net_rcvd+0
+            sbc   net_room+0
+            sta   net_scnt+0
+            lda   net_rcvd+1
+            sbc   net_room+1
+            sta   net_scnt+1
+            jsr   net_stream_rd
+            bra   :radv
+:rone       lda   net_rcvd+0
+            sta   net_scnt+0
+            lda   net_rcvd+1
+            sta   net_scnt+1
+            jsr   net_stream_rd
+
+:radv       clc                          ; raw RX_RD += net_rcvd
+            lda   nrx_rd_orig+0
+            adc   net_rcvd+0
+            sta   nrx_rd_orig+0
+            lda   nrx_rd_orig+1
+            adc   net_rcvd+1
+            sta   nrx_rd_orig+1
+            lda   #>W5_S0_RXRD
             ldx   #<W5_S0_RXRD
             jsr   net_setaddr
             lda   nrx_rd_orig+1
@@ -455,14 +590,96 @@ net_recv_byte
             lda   nrx_rd_orig+0
             jsr   net_setdata
 
-            lda   #>W5_S0_CR         ; RECV: we consumed a byte
+            lda   #>W5_S0_CR           ; RECV: buffer consumed
             ldx   #<W5_S0_CR
             jsr   net_setaddr
             lda   #W5_CMD_RECV
             jsr   net_setdata
+            clc
+            rts
 
+*----------------------------------------------------------
+* net_stream_wr / net_stream_rd: copy net_scnt (16-bit, must be
+* nonzero) bytes between the data register (already addressed,
+* auto-incrementing) and the direct-page buffer at NPTR / NRXP,
+* advancing that pointer. Clobbers A and net_scnt.
+*----------------------------------------------------------
+net_stream_wr
+:l          lda   (NPTR)
+            jsr   net_setdata
+            inc   NPTR
+            bne   :n
+            inc   NPTR+1
+:n          lda   net_scnt+0
+            bne   :d
+            dec   net_scnt+1
+:d          dec   net_scnt+0
+            lda   net_scnt+0
+            ora   net_scnt+1
+            bne   :l
+            rts
+
+net_stream_rd
+:l          jsr   net_getdata
+            sta   (NRXP)
+            inc   NRXP
+            bne   :n
+            inc   NRXP+1
+:n          lda   net_scnt+0
+            bne   :d
+            dec   net_scnt+1
+:d          dec   net_scnt+0
+            lda   net_scnt+0
+            ora   net_scnt+1
+            bne   :l
+            rts
+
+*----------------------------------------------------------
+* net_send_byte / net_recv_byte: single-byte convenience wrappers
+* over the block routines, through net_tmp. net_recv_byte returns
+* carry set with the byte in A, or carry clear if none waiting.
+* Clobbers A/X/Y and the net scratch words.
+*----------------------------------------------------------
+net_send_byte
+            sta   net_tmp
+            lda   #<net_tmp
+            sta   NPTR
+            lda   #>net_tmp
+            sta   NPTR+1
+            lda   #1
+            sta   net_len+0
+            stz   net_len+1
+            jmp   net_send
+
+net_recv_byte
+            lda   #<net_tmp
+            sta   NRXP
+            lda   #>net_tmp
+            sta   NRXP+1
+            lda   #1
+            sta   net_len+0
+            stz   net_len+1
+            jsr   net_recv
+            lda   net_rcvd+0
+            ora   net_rcvd+1
+            beq   :none
             lda   net_tmp
             sec
+            rts
+:none       clc
+            rts
+
+*----------------------------------------------------------
+* net_delay: a short busy wait, used to pace the DHCP RX polls
+* and the send free-space wait. Clobbers A/X/Y.
+*----------------------------------------------------------
+net_delay
+            ldy   #$40
+:d1         ldx   #$FF
+:d0         dex
+            bne   :d0
+            dey
+            bne   :d1
             rts
 
 *----------------------------------------------------------
@@ -483,6 +700,12 @@ net_dest_port dfb  $07,$C0           ; connect target port (default 1984)
 
 net_tmp      dfb   0                  ; one-byte scratch across I/O calls
 net_timeout  dfb   0,0               ; net_connect SOCK_INIT poll counter
+net_len      dfb   0,0               ; block length in (net_send/net_recv, DHCP)
+net_rcvd     dfb   0,0               ; block bytes actually read (net_recv)
+net_scnt     dfb   0,0               ; stream chunk counter (net_stream_*)
+net_room     dfb   0,0               ; bytes until the ring's top edge
+net_wait     dfb   0                  ; net_send free-space wait counter
+net_seg      dfb   0,0               ; current send segment length
 ntx_wr       dfb   0,0                ; translated TX write address
 ntx_ptr      dfb   0,0               ; raw TX write pointer
 ntx_free     dfb   0,0               ; TX free size

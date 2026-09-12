@@ -40,3 +40,5 @@ reference/raw/effects/*.dat
 # Standalone network bring-up harness: assembled in-place (not a Makefile
 # part), so its binary lands in src/. The source (src/nettest.s) is tracked.
 src/nettest
+src/nettest_wrap
+src/proto_test
