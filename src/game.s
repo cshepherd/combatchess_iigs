@@ -208,10 +208,12 @@ setup_game
 * The captured boards (generated).
   put boards
 
-* Debug board (milestone 3) and the status display.
+* Debug board (milestone 3) and the status display. The status plaque
+* (status_art, 12.8 KB) is NOT put here: cc.s loads it into its own bank
+* (STATUS_ART_BANK) at boot and status.s blits it from there, keeping the
+* GAME image under $BEFF.
   put dbg
   put status
-  put status_art
  put art
   put board_art
   put sound_samples

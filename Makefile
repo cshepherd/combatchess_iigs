@@ -51,7 +51,10 @@ src/status_art.s: tools/gen_plaque.py reference/raw/status/status_own_mode7_7D2C
 src/board_art.s: tools/gen_board_art.py reference/raw/boards/board_charset.bin reference/raw/boards/boards_capture.json $(wildcard reference/raw/boards/board*_codes.txt) $(wildcard reference/raw/boards/board*.png)
 	python3 tools/gen_board_art.py
 
-out/game: src/status.s src/status_art.s src/art.s src/board_art.s src/sound.s src/sound_samples.s
+out/game: src/status.s src/art.s src/board_art.s src/sound.s src/sound_samples.s
+# The status plaque is no longer linked into GAME; it builds on its own and
+# ships as the SA resource, loaded into STATUS_ART_BANK at boot (see cc.s).
+out/status_art: src/status_art.s
 
 .PHONY: all package clean
 all: package
@@ -65,7 +68,7 @@ out/%: src/%.s $(SHARED)
 	cd src && merlin32 -V $*.s
 	mv src/$* out/$*
 
-$(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp $(BINS)
+$(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp $(BINS) out/status_art
 	mkdir -p out
 	rm -f $(IMGFILE)
 	$(CADIUS) CREATEVOLUME $(IMGFILE) $(VOLNAME) 800KB --quiet
@@ -98,6 +101,11 @@ $(IMGFILE): res/PRODOS res/sounds.bin res/ntpplayer res/title.ntp $(BINS)
 	cp res/title.ntp out/TM\#060000
 	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/TM\#060000 --quiet
 	rm out/TM\#060000
+	# The status-screen plaque (12.8 KB), loaded into its own bank at boot so
+	# it does not eat into GAME's $$2000-$$BEFF window.
+	cp out/status_art out/SA\#060000
+	$(CADIUS) ADDFILE $(IMGFILE) /$(VOLNAME)/ out/SA\#060000 --quiet
+	rm out/SA\#060000
 ifeq ($(INCLUDE_TESTS),1)
 	# Rules self-tests: T on the title screen, or 00/1004g in KEGS.
 	cp out/test out/TEST\#062000

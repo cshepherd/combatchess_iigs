@@ -30,6 +30,7 @@ STATUS_TANK_RED  = $0520   ; Atari $34, the hull brown measured from the capture
 STATUS_TANK_BLK  = $0000
 STATUS_SLOT_BG   = 8       ; grey, the bitmap's background slot
 STATUS_INK       = COL_BLACK
+STATUS_ART_ROWS  = 80      ; plaque height (was in status_art.s, now bank-loaded)
 STATUS_HEAD_Y    = 90
 STATUS_NET_Y     = 100     ; the net opponent line, between the header and the roster
 STATUS_ROW_Y     = 110
@@ -125,10 +126,10 @@ status_draw
  lda #STATUS_SLOT_BG
  jsr set_fill_colour
  jsr fill_rect
- ldx #status_art
- ldy #SCREEN
+ ldx #0                    ; the plaque sits at STATUS_ART_BANK/0000 (cc.s loaded it
+ ldy #SCREEN               ; there at boot); block-move it straight to the screen
  lda #STATUS_ART_ROWS*SCREEN_ROW-1
- mvn $00,$E1
+ mvn STATUS_ART_BANK,$E1
  phk
  plb
 * header

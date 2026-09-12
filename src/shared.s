@@ -54,6 +54,11 @@ inject_key      = $1110  ; word
 snd_blk         = $1120  ; long: base address of the loaded sample bank
 snd_loaded      = $1124  ; byte: nonzero once cc.s load_res has run (once/boot)
 
+* The status-screen plaque (12.8 KB) lives in its own bank, not the GAME
+* image, so GAME stays under $BEFF. cc.s loads the SA resource here at boot
+* (like SOUNDS/NT/TM) and status.s block-moves it to the screen from here.
+STATUS_ART_BANK = $05    ; spare fast-RAM bank holding the status plaque bitmap
+
 * Network play (spec N4). Nonzero selects a network game: GAME
 * connects to the match server instead of running a local hot-seat.
 net_mode        = $1130  ; byte: 0 local, nonzero network game
