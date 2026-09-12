@@ -316,28 +316,27 @@ st_find_unit
  MX %00
  lda status_side
  and #$00FF
- tax
- lda side_first_id,x
- and #$00FF
- sta st_id
- lda side_units,x
- and #$00FF
- sta st_left
+ sta st_left               ; our side (0/1), reused as the side filter
  lda st_nth
  sta st_count
-:scan
- lda st_left
- beq :none
- dec st_left
- ldx st_id
+ stz st_id                 ; slot index; scan every slot so the roster works
+:scan                      ; whatever id order the units use (local: RED 0-10,
+ lda st_id                 ; BLACK 11-21; net: packed by the server), filtering
+ cmp #MAX_UNITS            ; by side rather than a fixed per-side id range
+ bcs :none
+ tax
  inc st_id
+ lda unit_flags,x
+ and #$0080
+ beq :scan                 ; empty / destroyed slot
+ lda unit_side,x
+ and #$00FF
+ cmp st_left
+ bne :scan                 ; the other side
  lda unit_class,x
  and #$00FF
  cmp st_class
- bne :scan
- lda unit_flags,x
- and #$0080
- beq :scan                 ; destroyed: not counted
+ bne :scan                 ; a different class
  dec st_count
  bne :scan
  txa

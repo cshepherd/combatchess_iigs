@@ -30,6 +30,9 @@ net_game_start
             stz   nl_action+0
             stz   nl_action+1
             jsr   net_status_reset            ; header on the (black) setup screen
+            lda   net_cached                   ; slot + lease cached from an earlier
+            bne   :cached                       ; connect this boot? reuse it
+* --- first connect this boot: probe the card and run DHCP ---
             jsr   net_init
             bcc   :ok0
             lda   #<s_net_nocard
@@ -37,30 +40,48 @@ net_game_start
             jsr   net_fail
             sec
             rts                            ; carry set: no card
-:ok0        lda   net_slot                    ; "...IN SLOT n"
-            clc
-            adc   #'0'
-            sta   nd_slot
-            lda   #<s_net_det
-            ldx   #>s_net_det
-            jsr   net_status
+:ok0        jsr   net_show_slot               ; "UTHERNET II DETECTED IN SLOT n"
             jsr   net_config_static
             lda   #<s_net_dhcp                ; DHCP request going out
             ldx   #>s_net_dhcp
             jsr   net_status
             jsr   net_configure             ; DHCP
-            bcc   :ok1
+            bcc   :leased
             lda   #<s_net_failc
             ldx   #>s_net_failc
             jsr   net_fail
             sec
             rts
-:ok1        lda   #<s_net_lease               ; DHCP answer, then the lease we got
+:leased     lda   net_slot                    ; cache the slot + the 18-byte config
+            sta   net_c_slot                   ; block (gw+mask+mac+ip) so the next
+            ldx   #17                          ; net game this boot skips probe + DHCP
+:cpc        lda   net_cfg,x
+            sta   net_c_cfg,x
+            dex
+            bpl   :cpc
+            lda   #1
+            sta   net_cached
+            lda   #<s_net_lease               ; "DHCP LEASE RECEIVED:"
             ldx   #>s_net_lease
             jsr   net_status
-            jsr   net_show_ip                 ; "  IP <our address>"
+            bra   :haveaddr
+* --- later connect: restore the cached slot + lease, skip probe + DHCP ---
+:cached     lda   net_c_slot
+            sta   net_slot
+            jsr   net_setbase                  ; relock the I/O operands to the slot
+            jsr   net_reset                    ; clean chip state before TCP
+            ldx   #17
+:rcc        lda   net_c_cfg,x
+            sta   net_cfg,x
+            dex
+            bpl   :rcc
+            jsr   net_show_slot
+            lda   #<s_net_cached              ; "USING CACHED LEASE:"
+            ldx   #>s_net_cached
+            jsr   net_status
+:haveaddr   jsr   net_show_ip                 ; "  IP <our address>"
             jsr   net_show_gw                 ; "  GATEWAY <server address>"
-            lda   #<s_net_conn                ; DHCP done; opening the TCP link
+            lda   #<s_net_conn                ; opening the TCP link
             ldx   #>s_net_conn
             jsr   net_status
             inc   net_src_port+1             ; bump the TCP source port each game so a
@@ -255,6 +276,17 @@ net_status
 * net_show_ip / net_show_gw: one status line = a label then the dotted-decimal
 * address the DHCP lease gave us (net_ip / net_gw). Entered 8-bit like
 * net_status; the line is composed in 16-bit and handed back to net_status.
+* net_show_slot: the "UTHERNET II DETECTED IN SLOT n" status line.
+net_show_slot
+            mx    %11
+            lda   net_slot
+            clc
+            adc   #'0'
+            sta   nd_slot
+            lda   #<s_net_det
+            ldx   #>s_net_det
+            jmp   net_status
+
 net_show_ip
             mx    %11                          ; entered 8-bit like net_status
             lda   #<s_net_ip
@@ -363,6 +395,8 @@ nd_slot      dfb   '1'
 s_net_dhcp   asc   'REQUESTING DHCP LEASE...'
              dfb   0
 s_net_lease  asc   'DHCP LEASE RECEIVED:'
+             dfb   0
+s_net_cached asc   'USING CACHED LEASE:'
              dfb   0
 s_net_ip     asc   '  IP  '
              dfb   0

@@ -67,10 +67,28 @@ snd_loaded      = $1124  ; byte: nonzero once cc.s load_res has run (once/boot)
 * (like SOUNDS/NT/TM) and status.s block-moves it to the screen from here.
 STATUS_ART_BANK = $05    ; spare fast-RAM bank holding the status plaque bitmap
 
+* The cCc brick-wall boot logo (CCC resource, a raw 32 KB SHR image). cc.s
+* loads it into this bank at boot and TITLE fades it in/out once, before the
+* title screen, on a cold boot. Loaded at the bank base ($xx/0000), so the
+* pixels sit at +0 (screen $2000) and the palette at +$7E00 (screen $9E00).
+CCC_BANK = $06           ; spare fast-RAM bank holding the boot-logo bitmap
+CCC_SRC  = $060000       ; its pixels (CCC_BANK/0000, == SHR $2000)
+CCC_PAL  = $067E00       ; its palette (CCC_BANK/7E00, == SHR $9E00)
+
 * Network play (spec N4). Nonzero selects a network game: GAME
 * connects to the match server instead of running a local hot-seat.
 net_mode        = $1130  ; byte: 0 local, nonzero network game
 net_human       = $1131  ; byte: in a net game, 1 waits for a human, 0 plays a bot
+
+* Cached slot + DHCP lease, so a second net game this boot skips the card
+* probe and the slow/flaky DHCP. In page $11, which survives a part reload
+* (net_cfg itself lives in GAME's data and is re-zeroed each time GAME loads).
+* $1132-$1133 are a deliberate pad: the title writes net_human ($1131) with a
+* 16-bit STX, which also stores the high byte into $1132, so the cache must
+* start clear of that (the same 16-bit-store adjacency trap as net_mode/human).
+net_cached      = $1134  ; byte: nonzero once the card + lease are cached
+net_c_slot      = $1135  ; byte: cached Uthernet slot
+net_c_cfg       = $1136  ; 18 bytes: the W5100 config block (gw+mask+mac+ip)
 
 * Heartbeat task record (see toolbox_init): 20 bytes the
 * firmware keeps a pointer to for the whole session, so it
