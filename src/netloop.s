@@ -26,14 +26,33 @@ net_game_start
             stz   nl_recon_tries
             stz   nl_action+0
             stz   nl_action+1
+            jsr   net_status_reset            ; header on the (black) setup screen
             jsr   net_init
             bcc   :ok0
+            lda   #<s_net_nocard
+            ldx   #>s_net_nocard
+            jsr   net_fail
+            sec
             rts                            ; carry set: no card
-:ok0        jsr   net_config_static
+:ok0        lda   net_slot                    ; "...IN SLOT n"
+            clc
+            adc   #'0'
+            sta   nd_slot
+            lda   #<s_net_det
+            ldx   #>s_net_det
+            jsr   net_status
+            jsr   net_config_static
             jsr   net_configure             ; DHCP
             bcc   :ok1
+            lda   #<s_net_failc
+            ldx   #>s_net_failc
+            jsr   net_fail
+            sec
             rts
-:ok1        inc   net_src_port+1             ; bump the TCP source port each game so a
+:ok1        lda   #<s_net_conn                ; DHCP done; opening the TCP link
+            ldx   #>s_net_conn
+            jsr   net_status
+            inc   net_src_port+1             ; bump the TCP source port each game so a
             bne   :sp                        ; sequential game / reconnect does not clash
             inc   net_src_port+0             ; with a prior 4-tuple still in TIME_WAIT
 :sp         ldx   #3                         ; dest = gateway host : default port
@@ -43,6 +62,10 @@ net_game_start
             bpl   :ds
             jsr   net_connect
             bcc   :ok2
+            lda   #<s_net_failc
+            ldx   #>s_net_failc
+            jsr   net_fail
+            sec
             rts
 :ok2        stz   nl_to+0                     ; wait for SOCK_ESTABLISHED
             stz   nl_to+1
@@ -59,9 +82,14 @@ net_game_start
             bcs   :failest
             jsr   net_delay
             bra   :ew
-:failest    sec
+:failest    lda   #<s_net_failc
+            ldx   #>s_net_failc
+            jsr   net_fail
+            sec
             rts
-:estab
+:estab      lda   #<s_net_estab               ; SOCK_ESTABLISHED
+            ldx   #>s_net_estab
+            jsr   net_status
 * --- send HELLO ---
             lda   #1
             sta   ng_seq+0
@@ -99,16 +127,23 @@ net_game_start
             lda   #NET_QUEUE_BOT
             jsr   net_build_queue
             jsr   net_frame_send
+            lda   #<s_net_wait                ; queued; waiting for a match
+            ldx   #>s_net_wait
+            jsr   net_status
             bra   :hloop
 :hidle      inc   nl_to+0
             bne   :h2
             inc   nl_to+1
 :h2         lda   nl_to+1
             cmp   #$08
-            bcs   :failest
-            jsr   net_delay
+            bcc   :hcont
+            jmp   :failest
+:hcont      jsr   net_delay
             bra   :hloop
-:matched    lda   proto_payload+0            ; match_id -> ng_match_id
+:matched    lda   #<s_net_match               ; a game was found
+            ldx   #>s_net_match
+            jsr   net_status
+            lda   proto_payload+0            ; match_id -> ng_match_id
             sta   ng_match_id+0
             lda   proto_payload+1
             sta   ng_match_id+1
@@ -140,8 +175,81 @@ net_game_start
             sta   NSP+1
             jsr   netstate_decode
             jsr   netstate_apply
+            lda   #<s_net_start               ; board ready; hand off to the game
+            ldx   #>s_net_start
+            jsr   net_status
             clc
             rts
+
+*----------------------------------------------------------
+* Setup-screen status log. net_game_start runs in native mode, 8-bit M/X, on
+* the black SHR that shr_init cleared; QuickDraw is up (toolbox_init), so each
+* phase prints a white line down the screen instead of leaving it blank.
+*----------------------------------------------------------
+NET_MSG_X   = 24
+NET_MSG_Y0  = 40
+NET_MSG_DY  = 13
+
+* net_status_reset: start the log at the top and print the header. 8-bit in/out.
+net_status_reset
+            lda   #NET_MSG_Y0
+            sta   net_msg_y
+            stz   net_msg_y+1
+            lda   #<s_net_title
+            ldx   #>s_net_title
+* fall through to net_status
+
+* net_status: A = message ptr lo, X = ptr hi. Print one white line at the next
+* Y and advance. Enters 8-bit native, draws in 16-bit, returns 8-bit.
+net_status
+            sta   str_ptr
+            stx   str_ptr+1
+            rep   #$30
+            mx    %00
+            lda   #15                          ; white foreground on black
+            ldx   #0
+            jsr   set_colors
+            ldx   #NET_MSG_X
+            ldy   net_msg_y
+            jsr   draw_cstr
+            lda   net_msg_y                     ; next line
+            clc
+            adc   #NET_MSG_DY
+            sta   net_msg_y
+            sep   #$30
+            mx    %11
+            rts
+
+* net_fail: A/X = message ptr. Print it, then hold ~2s so it can be read
+* before net_game_start returns and the caller falls back to a local game.
+net_fail
+            jsr   net_status
+            ldx   #60
+:fw         jsr   net_delay
+            dex
+            bne   :fw
+            rts
+
+net_msg_y    dw    NET_MSG_Y0
+s_net_title  asc   'COMBAT CHESS -- NETWORK GAME'
+             dfb   0
+s_net_det    asc   'UTHERNET II DETECTED IN SLOT '
+nd_slot      dfb   '1'
+             dfb   0
+s_net_conn   asc   'CONNECTING...'
+             dfb   0
+s_net_estab  asc   'CONNECTED'
+             dfb   0
+s_net_wait   asc   'WAITING FOR OPPONENT...'
+             dfb   0
+s_net_match  asc   'MATCHED WITH COMPUTER'
+             dfb   0
+s_net_start  asc   'STARTING GAME...'
+             dfb   0
+s_net_nocard asc   'NO UTHERNET CARD FOUND'
+             dfb   0
+s_net_failc  asc   'CONNECTION FAILED'
+             dfb   0
 
 * net_poll_step: pump one server frame if available and apply it; sets
 * nl_dirty nonzero when the board changed. Non-blocking (returns quickly
