@@ -34,7 +34,7 @@ board_units_ptrs
 
 * Board 1
 board_map_1
- asc 'TTTTTTT~TTT.MM...TTT'
+ asc 'TTTTTTT~TTT......TTT'
  asc 'TTTTT.=~T.MMMMTTT.TT'
  asc 'TTTT.T~=.MMMMTTTTT.T'
  asc 'TTT.TT~T.MMMMTTTTT.T'
@@ -322,7 +322,7 @@ board_units_9
 
 * Board 10
 board_map_10
- asc 'TTTTTTT~TTT.MM...TTT'
+ asc 'TTTTTTT~TTT......TTT'
  asc 'TTTTT.=~T.MMMMTTT.TT'
  asc 'TTTT.T~=.MMMMTTTTT.T'
  asc 'TTT.TT~T.MMMMTTTTT.T'
