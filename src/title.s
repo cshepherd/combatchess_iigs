@@ -887,6 +887,8 @@ seg_push3
  dfb $80+STYLE_NORMAL
  da 0
 seg_push_net
+ da s_netplay
+ dfb $80+STYLE_NORMAL
  da s_push
  dfb $80+STYLE_NORMAL
  da s_key_n
@@ -1019,7 +1021,9 @@ s_net_mid    asc ' VS BOT OR '
              dfb 0
 s_key_h      asc 'H'
              dfb 0
-s_net_b      asc ' VS HUMAN (NET).'
+s_net_b      asc ' VS HUMAN.'
+             dfb 0
+s_netplay    asc 'NETPLAY: '
              dfb 0
 s_by         asc 'GAME BY LOU MATTSFIELD'
              dfb 0
